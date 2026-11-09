@@ -8,6 +8,7 @@ import {
 import { getCommits, linkCommits } from "./commits";
 import { startServer } from "./server";
 import { runStdio } from "./mcp";
+import { installMcp, onPath } from "./installmcp";
 
 const usage = `board                      start the web board in this project and open the browser
 board init                 create the board dir, update .gitignore and CLAUDE.md
@@ -20,6 +21,8 @@ board stop <id>            clear the agent marker
 board touch                heartbeat for a Claude Code hook (reads hook JSON on stdin, silent)
 board mcp                  stdio MCP server for agents (Claude Code, opencode, ...); run from the project dir or pass --dir
 board mcp-config [claude|opencode|opencode-v1]  print the JSON to paste into .mcp.json or opencode.json
+board install-mcp [claude|opencode] [--hooks] [--shared] [--dry-run] [--opencode-v1]
+                           merge the board MCP server into the project's agent config (explicit opt-in)
 board subtasks <id>         turn plain list items in the description into - [ ] subtasks
 options: --dir <project root> (default cwd), --port <n> (default 4747), --no-open
 columns: ${columns.join(", ")}`;
@@ -30,7 +33,7 @@ const { values, positionals } = parseArgs({
   options: {
     dir: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" },
     type: { type: "string" }, column: { type: "string" }, task: { type: "string" }, phase: { type: "string" },
-    lane: { type: "string" }, "needs-you": { type: "boolean" }, blocked: { type: "boolean" }, notes: { type: "string" }, session: { type: "string" },
+    lane: { type: "string" }, "needs-you": { type: "boolean" }, blocked: { type: "boolean" }, notes: { type: "string" }, session: { type: "string" }, hooks: { type: "boolean" }, shared: { type: "boolean" }, "dry-run": { type: "boolean" }, "opencode-v1": { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -41,7 +44,7 @@ const findRoot = (from: string) => {
     if (dirname(d) === d) return from;
   }
 };
-const root = values.dir !== undefined || cmd === "init" ? resolve(values.dir ?? process.cwd()) : findRoot(process.cwd());
+const root = values.dir !== undefined || cmd === "init" || cmd === "install-mcp" ? resolve(values.dir ?? process.cwd()) : findRoot(process.cwd());
 
 const fail = (msg: string): never => { console.error(`board: ${msg}`); process.exit(1); };
 const need = () => (hasBoard(root) ? boardDir(root) : fail("no board here. Run `board init` first."));
@@ -107,6 +110,19 @@ try {
   if (values.help || cmd === "help") console.log(usage);
   else if (cmd === "touch") await touch();
   else if (cmd === "mcp") await runStdio(root);
+  else if (cmd === "install-mcp") {
+    const target = args[0] ?? "claude";
+    if (target !== "claude" && target !== "opencode") fail("usage: board install-mcp [claude|opencode] [--hooks] [--shared] [--dry-run] [--opencode-v1]");
+    const dry = !!values["dry-run"];
+    const res = installMcp(root, { target: target as "claude" | "opencode", hooks: values.hooks, shared: values.shared, v1: values["opencode-v1"] }, dry);
+    for (const r of res) {
+      const rel = r.path.slice(root.length + 1);
+      console.log(`${r.status === "unchanged" ? "already configured" : dry ? `would ${r.status === "created" ? "create" : "update"}` : r.status}: ${rel}`);
+      if (dry && r.status !== "unchanged") console.log(`--- ${rel}\n${r.text}`);
+    }
+    if (!onPath("board")) console.error("warning: `board` is not on PATH; agents will not find the server until it is (bun link).");
+    if (target === "claude" && res.some((r) => r.status !== "unchanged") && !dry) console.log("restart Claude Code in this project to load it");
+  }
   else if (cmd === "mcp-config") {
     const which = args[0] ?? "claude";
     const cfg = which === "claude" ? { mcpServers: { board: { command: "board", args: ["mcp"] } } }
@@ -124,6 +140,7 @@ try {
     for (const [name, s] of [["CLAUDE.md", r.claude], ["AGENTS.md", r.agents]] as const) {
       console.log({ appended: `${name}: appended Board workflow block`, updated: `${name}: updated Board workflow block`, present: `${name}: block already present`, missing: `${name}: not found, no workflow block added` }[s]);
     }
+    console.log("agent setup (optional): board install-mcp [claude|opencode] [--hooks]");
     console.log(`start it with: board${root === process.cwd() ? "" : ` --dir ${root}`}`);
   } else if (cmd === "add") {
     const title = args.join(" ").trim();

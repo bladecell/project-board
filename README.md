@@ -59,19 +59,20 @@ Start the card with `--session` set to the session id (or export `CLAUDE_SESSION
 
 ## MCP server (Claude Code, opencode, others)
 
-`board mcp` is a stdio MCP server (newline-delimited JSON-RPC, no dependencies, tools only). Agents start it with the project as cwd; `--dir <root>` overrides. Print the config with `board mcp-config claude|opencode|opencode-v1` and paste it yourself, nothing edits your config.
+`board mcp` is a stdio MCP server (newline-delimited JSON-RPC, no dependencies, tools only). Agents start it with the project as cwd; `--dir <root>` overrides.
 
-Claude Code, `.mcp.json` in the project root (Claude asks you to approve project servers once):
+Install it into a project (explicit opt-in, `board init` never does this):
 
-```json
-{ "mcpServers": { "board": { "command": "board", "args": ["mcp"] } } }
+```sh
+board install-mcp                  # Claude Code: .mcp.json + enabledMcpjsonServers in .claude/settings.local.json
+board install-mcp --hooks          # also the `board touch` heartbeat hooks (see Live agent indicator)
+board install-mcp --shared         # write .claude/settings.json (committed) instead of settings.local.json
+board install-mcp opencode         # opencode.json, opencode 2.x schema: mcp.servers.board
+board install-mcp opencode --opencode-v1   # opencode 1.x schema: mcp.board
+board install-mcp --dry-run        # print the resulting files, write nothing
 ```
 
-opencode 2.x, `opencode.json` (`opencode mcp list` shows it as connected). opencode 1.x uses `{"mcp":{"board":{"type":"local","command":["board","mcp"],"enabled":true}}}` (`board mcp-config opencode-v1`):
-
-```json
-{ "$schema": "https://opencode.ai/config.json", "mcp": { "servers": { "board": { "type": "local", "command": ["board", "mcp"] } } } }
-```
+It merges into existing files: other servers, keys, key order and other hooks are kept, hooks are never duplicated, and a second run changes nothing. Files must be plain JSON; with comments, trailing commas or invalid JSON it refuses and writes nothing. Writes are atomic. It warns if `board` is not on PATH. `board mcp-config claude|opencode|opencode-v1` only prints the JSON.
 
 Tools: `board_list`, `board_show`, `next_card` (top todo card no live agent holds), `claim_card` (todo or in-progress to in-progress, sets the agent marker; refused if another live agent holds it), `move_to_verify` (in-progress to verify, notes required, clears the marker), `add_card` (inbox only), `add_note` (appends to verify notes), `release_card`. Rules enforced in the server: agents never move cards to done, planned or todo, never move a card out of inbox, cannot delete, and cannot edit title, type, phase, lane or flags of existing cards. History lines are tagged `mcp:<client name>`. Every tool call refreshes the heartbeat of the cards this server holds, so the live indicator works without hooks. `board init` writes the workflow block to AGENTS.md (opencode reads it) as well as CLAUDE.md.
 

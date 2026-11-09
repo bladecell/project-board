@@ -97,3 +97,19 @@ describe("mcp-config", () => {
     expect(Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "mcp-config", "x"]).exitCode).toBe(1);
   });
 });
+
+describe("install-mcp command", () => {
+  test("writes files, reports, is idempotent; dry-run writes nothing; init does not install", () => {
+    const p = mkdtempSync(join(root, "ip-"));
+    const run = (...a: string[]) => { const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", p, ...a]); return { out: r.stdout.toString(), code: r.exitCode }; };
+    run("init");
+    expect(Bun.file(join(p, ".mcp.json")).size).toBe(0);
+    expect(run("install-mcp", "--dry-run").out).toContain("would create: .mcp.json");
+    expect(Bun.file(join(p, ".mcp.json")).size).toBe(0);
+    expect(run("install-mcp", "--hooks").out).toContain("created: .claude/settings.local.json");
+    expect(run("install-mcp", "--hooks").out).toContain("already configured: .mcp.json");
+    writeFileSync(join(p, "opencode.json"), "{,}");
+    const bad = run("install-mcp", "opencode");
+    expect(bad.code).toBe(1);
+  });
+});
