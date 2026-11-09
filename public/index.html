@@ -8,6 +8,7 @@
 /* Reading: personal dev tool, calm kanban. ENERGY 1 / RHYTHM 1 / MOTION 1.
    System fonts: instant and offline. One accent (teal), amber and red only for the two flags. */
 :root {
+  color-scheme: light dark;
   --wall: url(/contour-light.svg);
   --bg: #f8fafc; --col: rgb(238 242 247 / .72); --card: #ffffff; --line: #cbd5e1; --line-soft: #e2e8f0;
   --text: #0f172a; --muted: #475569; --accent: #2563eb; --accent-text: #ffffff;
@@ -56,7 +57,21 @@ header select { width: auto; min-width: 160px; }
 #banner[hidden] { display: none; }
 
 #board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; scroll-snap-type: x proximity; }
-.column { flex: 0 0 292px; max-width: 86vw; background: var(--col); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; max-height: calc(100dvh - 110px); }
+.column { flex: 0 0 292px; max-width: 86vw; background: var(--tint); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; max-height: calc(100dvh - 110px); }
+.column[data-col="inbox"] { --tint: rgb(203 213 225 / .55); }
+.column[data-col="planned"] { --tint: rgb(191 219 254 / .55); }
+.column[data-col="todo"] { --tint: rgb(253 230 138 / .5); }
+.column[data-col="in-progress"] { --tint: rgb(221 214 254 / .55); }
+.column[data-col="verify"] { --tint: rgb(153 246 228 / .5); }
+.column[data-col="done"] { --tint: rgb(187 247 208 / .5); }
+@media (prefers-color-scheme: dark) {
+  .column[data-col="inbox"] { --tint: rgb(51 65 85 / .5); }
+  .column[data-col="planned"] { --tint: rgb(30 58 138 / .4); }
+  .column[data-col="todo"] { --tint: rgb(120 83 9 / .4); }
+  .column[data-col="in-progress"] { --tint: rgb(76 29 149 / .4); }
+  .column[data-col="verify"] { --tint: rgb(19 78 74 / .45); }
+  .column[data-col="done"] { --tint: rgb(20 83 45 / .4); }
+}
 .column h2 { margin: 4px 6px 0; font-size: 13px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
 .column h2 .count { color: var(--muted); font-weight: 400; font-size: 13px; font-variant-numeric: tabular-nums; }
 .column.over { outline: 2px dashed var(--accent); outline-offset: -2px; }

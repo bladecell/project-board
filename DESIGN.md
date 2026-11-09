@@ -25,10 +25,11 @@ glass:
 
 ## Glass
 - Card detail dialog (modal), over a dimmed backdrop.
+- Board columns: translucent per-column tint (inbox slate, planned blue, todo amber, in-progress violet, verify teal, done green) with `blur(12px)` over the contour wallpaper. No shadow.
 - Any future popover, floating toolbar or drag overlay.
 
 ## Flat
-Everything else: header, columns, cards, chips, inputs, forms, lists, buttons. No shadow, blur or effects.
+Everything else: header, cards, chips, inputs, forms, lists, buttons. No shadow, blur or effects.
 
 ## Notes
 - Dark mode follows `prefers-color-scheme`; both token sets have dark values in `public/index.html`.

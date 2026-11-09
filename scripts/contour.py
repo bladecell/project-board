@@ -1,6 +1,6 @@
 # Generates public/contour-{light,dark}.svg: topographic lines from a sum-of-sines height field.
 import math, random, sys
-W, H, STEP, LEVELS = 1600, 1000, 10, 16
+W, H, STEP, LEVELS = 1600, 1000, 8, 16
 random.seed(7)
 waves = [(random.uniform(.004, .012), random.uniform(.004, .012), random.uniform(0, 6.28), random.uniform(.5, 1)) for _ in range(7)]
 def h(x, y):
@@ -24,11 +24,36 @@ def segs(level):
       if len(cross) == 2: out.append(cross)
       elif len(cross) == 4: out += [cross[:2], cross[2:]]
   return out
+def chains(sg):
+  nb = {}
+  key = lambda p: (round(p[0], 2), round(p[1], 2))
+  for a, b in sg:
+    nb.setdefault(key(a), []).append((a, b)); nb.setdefault(key(b), []).append((b, a))
+  used, out = set(), []
+  for a, b in sg:
+    if (key(a), key(b)) in used or (key(b), key(a)) in used: continue
+    chain = [a, b]; used.add((key(a), key(b)))
+    for rev in (False, True):
+      if rev: chain.reverse()
+      while True:
+        cur = chain[-1]
+        nxt = next(((c, d) for c, d in nb.get(key(cur), []) if (key(c), key(d)) not in used and (key(d), key(c)) not in used), None)
+        if not nxt: break
+        used.add((key(nxt[0]), key(nxt[1]))); chain.append(nxt[1])
+    out.append(chain)
+  return out
+def smooth(c):
+  if len(c) < 3: return f"M{c[0][0]:.1f} {c[0][1]:.1f}L{c[-1][0]:.1f} {c[-1][1]:.1f}"
+  m = lambda p, q: ((p[0] + q[0]) / 2, (p[1] + q[1]) / 2)
+  closed = math.dist(c[0], c[-1]) < 1
+  d = f"M{m(c[0], c[1])[0]:.1f} {m(c[0], c[1])[1]:.1f}"
+  for i in range(1, len(c) - 1):
+    e = m(c[i], c[i + 1]); d += f"Q{c[i][0]:.1f} {c[i][1]:.1f} {e[0]:.1f} {e[1]:.1f}"
+  return d + ("Z" if closed else "")
 d = []
 for n in range(1, LEVELS):
-  lv = lerp(lo, hi, n / LEVELS)
-  d += [f"M{a[0]:.0f} {a[1]:.0f}L{b[0]:.0f} {b[1]:.0f}" for a, b in segs(lv)]
+  d += [smooth(c) for c in chains(segs(lerp(lo, hi, n / LEVELS)))]
 path = "".join(d)
 for name, bg, stroke, op in (("light", "#f8fafc", "#94a3b8", .45), ("dark", "#0f172a", "#64748b", .35)):
   open(f"public/contour-{name}.svg", "w").write(
-    f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid slice"><rect width="{W}" height="{H}" fill="{bg}"/><path d="{path}" fill="none" stroke="{stroke}" stroke-opacity="{op}" stroke-width="1.2" stroke-linecap="round"/></svg>')
+    f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid slice"><rect width="{W}" height="{H}" fill="{bg}"/><path d="{path}" fill="none" stroke="{stroke}" stroke-opacity="{op}" stroke-width="1.3" stroke-linecap="round"/></svg>')
