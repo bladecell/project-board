@@ -4,14 +4,19 @@ import { buildPrompt, promptTitle } from "./public/prompt.js";
 describe("buildPrompt", () => {
   test("exact text for a plain card", () => {
     expect(buildPrompt({ id: 99, title: "Fix ISO-TP bounds" })).toBe(
-      'Work on board card #99: "Fix ISO-TP bounds". Read it with the board_show MCP tool (or run `board show 99`), claim it (claim_card / `board start 99`), follow the Board workflow in CLAUDE.md or AGENTS.md, and when finished move it to verify with notes on what you ran and the result. If there is anything I should check by hand, add it to the verify notes as `- [ ]` tick boxes, one per check. Do not move it to done.');
+      'Work on board card #99: "Fix ISO-TP bounds". Read it with the board_show MCP tool (or run `board show 99`), claim it (claim_card / `board start 99`), follow the Board workflow in CLAUDE.md or AGENTS.md, and when finished move it to verify with notes on what you ran and the result. If there is anything I should check by hand, put it in How to verify as `- [ ]` lines, one per check (move_to_verify howToVerify, set_how_to_verify, or `board move 99 verify --steps`), not in the verify notes; the notes are for what you ran and the result. Do not move it to done.');
   });
   test("single line, no stray quotes or backticks from the title", () => {
     const p = buildPrompt({ id: 1, title: 'a "b"\n`rm -rf`\r\n\tc\\' });
     expect(p).not.toContain("\n");
     expect(p).toContain(`"a 'b' 'rm -rf' c'"`);
-    expect(p.match(/`/g)).toHaveLength(6);
+    expect(p.match(/`/g)).toHaveLength(8);
     expect(p.match(/"/g)).toHaveLength(2);
+  });
+  test("tells the agent to put manual checks in How to verify, not the notes", () => {
+    const p = buildPrompt({ id: 9, title: "t" });
+    expect(p).toContain("put it in How to verify as `- [ ]` lines, one per check (move_to_verify howToVerify, set_how_to_verify, or `board move 9 verify --steps`), not in the verify notes");
+    expect(p).not.toContain("\n");
   });
   test("long titles are capped", () => {
     const t = promptTitle("x".repeat(500));

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { countTasks, listToTasks } from "./public/markdown.js";
+import { countTasks, listToTasks, splitInlineTasks } from "./public/markdown.js";
 
 export const columns = ["inbox", "planned", "todo", "in-progress", "verify", "done"] as const;
 export const types = ["bug", "feature", "task", "decision"] as const;
@@ -149,9 +149,35 @@ export function placeCard(cards: Card[], id: number, column: Column, beforeId: n
   });
 }
 
+// Notes keep their line breaks: continuation lines are indented so they can never read as a section heading.
 export function appendNotes(c: Card, notes: string, date = new Date()): Card {
-  const line = `- ${date.toISOString().slice(0, 10)}: ${oneLine(notes)}`;
+  const [first = "", ...rest] = splitInlineTasks(notes.replace(/\r\n?/g, "\n")).split("\n").map((l) => l.trimEnd()).filter((l, i, a) => l || a.slice(i + 1).some(Boolean));
+  const line = [`- ${date.toISOString().slice(0, 10)}: ${first.trim()}`, ...rest.map((l) => (l ? `  ${l}` : ""))].join("\n");
   return { ...c, verifyNotes: c.verifyNotes ? `${c.verifyNotes}\n${line}` : line };
+}
+
+// Steps text from an agent or the CLI: real newlines, CRLF and a literal backslash-n all count; one tick box per line.
+export const normalizeSteps = (s: string) =>
+  splitInlineTasks(s.replace(/\r\n?/g, "\n").replace(/\\n/g, "\n")).split("\n").map((l) => l.trimEnd()).join("\n").trim();
+
+const stepKey = (l: string) => l.trim().replace(/^([-*+]\s+)\[[xX]\]/, "$1[ ]");
+
+// Appends steps that are not already present (compared by trimmed text, tick state ignored). Never removes anything.
+export function addSteps(c: Card, steps: string): Card {
+  const have = new Set(c.howToVerify.split("\n").map(stepKey));
+  const fresh = normalizeSteps(steps).split("\n").filter((l) => l.trim() && !have.has(stepKey(l)) && have.add(stepKey(l)));
+  if (!fresh.length) return c;
+  const howToVerify = c.howToVerify ? `${c.howToVerify}\n${fresh.join("\n")}` : fresh.join("\n");
+  return howToVerify.length > 100_000 ? c : { ...c, howToVerify };
+}
+
+export function setSteps(dir: string, id: number, steps: string, ctx: Ctx): Card {
+  const old = loadCards(dir).find((c) => c.id === id);
+  if (!old) throw new Error(`no card ${id}`);
+  const next = addSteps(old, steps);
+  const out = stamp(old, next, ctx, ["verify steps added"]);
+  if (out !== next || next !== old) writeCard(dir, out);
+  return out;
 }
 
 const str = (v: unknown, name: string, max: number) => {
@@ -281,14 +307,19 @@ export function updateCard(dir: string, id: number, patch: Record<string, unknow
   return out;
 }
 
-export function moveCard(dir: string, id: number, column: Column, beforeId: number | null, notes: string | undefined, ctx: Ctx): Card {
+export function moveCard(dir: string, id: number, column: Column, beforeId: number | null, notes: string | undefined, ctx: Ctx, steps?: string): Card {
   const cards = loadCards(dir);
   const old = cards.find((c) => c.id === id);
   if (!old) throw new Error(`no card ${id}`);
   const changed = placeCard(cards, id, column, beforeId);
   let moved = changed.find((c) => c.id === id) ?? old;
   if (notes) moved = appendNotes(moved, notes);
-  const out = stamp(old, moved, ctx);
+  const extra: string[] = [];
+  if (steps) {
+    const s = addSteps(moved, steps);
+    if (s !== moved) { moved = s; extra.push("verify steps added"); }
+  }
+  const out = stamp(old, moved, ctx, extra);
   for (const c of changed) if (c.id !== id) writeCard(dir, c);
   if (out !== moved || moved.order !== old.order) writeCard(dir, out);
   return out;
@@ -370,9 +401,9 @@ Work is tracked on a local kanban board (\`board\` command). Data lives in \`${r
 - Columns: inbox, planned, todo, in-progress, verify, done. Blocked is a flag, not a column.
 - Inbox -> Todo is the user's approval. Build only Todo items.
 - At the start of each session run \`board list todo\` and \`board list in-progress\`.
-- Move a card to in-progress when you start it, then run \`board start <id>\`. When done, move it to verify with \`board move <id> verify --notes "what ran + result"\` and run \`board stop <id>\`.
+- Move a card to in-progress when you start it, then run \`board start <id>\`. When done, move it to verify with \`board move <id> verify --notes "what ran + result" --steps "- [ ] check one\\n- [ ] check two"\` and run \`board stop <id>\`. Notes are for what you ran and the result; anything the user should check by hand goes in How to verify as \`- [ ]\` lines (\`--steps\`).
 - Only the user moves cards to done.
-- If the \`board\` MCP server is configured, use its tools instead (\`next_card\`, \`claim_card\`, \`add_note\`, \`move_to_verify\`, \`add_card\`, \`release_card\`); agents cannot move cards to todo, planned or done.
+- If the \`board\` MCP server is configured, use its tools instead (\`next_card\`, \`claim_card\`, \`add_note\`, \`move_to_verify\` with \`howToVerify\`, \`set_how_to_verify\`, \`add_card\`, \`release_card\`); agents cannot move cards to todo, planned or done.
 - Add new items you find with \`board add "title"\`; they land in inbox. Use \`--needs-you\` for unsure items and decisions.
 ${end}
 `;

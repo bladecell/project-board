@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 import { basename, dirname, join, resolve } from "node:path";
 import {
-  boardDir, boardRel, columns, convertSubtasks, createCard, hasBoard, initBoard, isAgentLive, loadCards, moveCard, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
+  boardDir, boardRel, columns, convertSubtasks, createCard, hasBoard, initBoard, isAgentLive, loadCards, moveCard, setSteps, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
   type Card,
 } from "./lib";
 import { getCommits, linkCommits } from "./commits";
@@ -14,7 +14,8 @@ import { installMcp, onPath } from "./installmcp";
 const usage = `board                      start the web board in this project and open the browser
 board init                 create the board dir, update .gitignore and CLAUDE.md
 board add "title" [--type bug|feature|task|decision] [--column inbox] [--task P2.3] [--phase X] [--lane L] [--needs-you] [--blocked]
-board move <id> <column> [--notes "what ran + result"]
+board move <id> <column> [--notes "what ran + result"] [--steps "- [ ] check one\n- [ ] check two"]
+board steps <id> [--steps "..."]  append manual checks to How to verify (or pipe them on stdin)
 board list [column]        one line per card (done is hidden unless asked for)
 board show <id>
 board start <id> [--session label]  mark an agent as working on the card (no column move)
@@ -30,12 +31,12 @@ options: --dir <project root> (default cwd), --port <n> (default 4747), --no-ope
 columns: ${columns.join(", ")}`;
 
 const { values, positionals } = parseArgs({
-  args: Bun.argv.slice(2),
+  args: Bun.argv.slice(2).flatMap((a, i, all) => (i > 0 && /^--(steps|notes|session)$/.test(all[i - 1]) && a.startsWith("-") ? [`${all[i - 1]}=${a}`] : [a])).filter((a, i, all) => !(/^--(steps|notes|session)$/.test(a) && all[i + 1]?.startsWith(`${a}=`))),
   allowPositionals: true,
   options: {
     dir: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" },
     type: { type: "string" }, column: { type: "string" }, task: { type: "string" }, phase: { type: "string" },
-    lane: { type: "string" }, "needs-you": { type: "boolean" }, blocked: { type: "boolean" }, notes: { type: "string" }, session: { type: "string" }, hooks: { type: "boolean" }, shared: { type: "boolean" }, "dry-run": { type: "boolean" }, "opencode-v1": { type: "boolean" },
+    lane: { type: "string" }, "needs-you": { type: "boolean" }, blocked: { type: "boolean" }, notes: { type: "string" }, session: { type: "string" }, steps: { type: "string" }, hooks: { type: "boolean" }, shared: { type: "boolean" }, "dry-run": { type: "boolean" }, "opencode-v1": { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -111,7 +112,12 @@ async function serve() {
 try {
   if (values.help || cmd === "help") console.log(usage);
   else if (cmd === "touch") await touch();
-  else if (cmd === "prompt") {
+  else if (cmd === "steps") {
+    const id = cardId(args[0]);
+    const steps = values.steps ?? (process.stdin.isTTY ? "" : (await Bun.stdin.text()).slice(0, 100_000));
+    if (!steps.trim()) fail('usage: board steps <id> --steps "- [ ] a\\n- [ ] b"  (or pipe steps on stdin)');
+    console.log(line(setSteps(need(), id, steps, { by: "cli" })));
+  } else if (cmd === "prompt") {
     const id = cardId(args[0]);
     console.log(buildPrompt(loadCards(need()).find((x) => x.id === id) ?? fail(`no card ${id}`)));
   }
@@ -160,7 +166,7 @@ try {
     console.log(line(c));
   } else if (cmd === "move") {
     if (args.length < 2) fail("usage: board move <id> <column> [--notes ...]");
-    console.log(line(moveCard(need(), cardId(args[0]), column(args[1]), null, values.notes, { by: "cli" })));
+    console.log(line(moveCard(need(), cardId(args[0]), column(args[1]), null, values.notes, { by: "cli" }, values.steps)));
   } else if (cmd === "start") {
     const c = startAgent(need(), cardId(args[0]), values.session ?? (process.env.CLAUDE_SESSION_ID || "claude"), { by: "cli" });
     console.log(line(c));

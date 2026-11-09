@@ -1,13 +1,13 @@
 import { randomBytes } from "node:crypto";
 import {
-  appendNotes, boardDir, createCard, hasBoard, isAgentLive, loadCards, moveCard, sortCards, startAgent, stopAgent, touchAgents, types, updateCard,
+  appendNotes, boardDir, setSteps, createCard, hasBoard, isAgentLive, loadCards, moveCard, sortCards, startAgent, stopAgent, touchAgents, types, updateCard,
   type Card, type Ctx,
 } from "./lib";
 
 export const supportedVersions = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 export const latestVersion = supportedVersions[supportedVersions.length - 1];
 export const maxLine = 1024 * 1024;
-const caps = { title: 200, description: 10000, notes: 2000, text: 1000 };
+const caps = { title: 200, description: 10000, notes: 2000, text: 1000, steps: 5000 };
 
 type Json = Record<string, unknown>;
 type Reply = { content: { type: "text"; text: string }[]; structuredContent?: Json; isError?: boolean };
@@ -26,7 +26,8 @@ const tools = [
   { name: "board_show", description: "Show one card in full: fields, description, verify notes, how to verify, history, linked commits.", inputSchema: obj({ id: idProp }, ["id"]) },
   { name: "next_card", description: "Top card in todo that no live agent holds.", inputSchema: obj({}) },
   { name: "claim_card", description: "Take a card from todo or in-progress: moves it to in-progress and marks this agent as working on it.", inputSchema: obj({ id: idProp }, ["id"]) },
-  { name: "move_to_verify", description: "Move an in-progress card to verify. Verify notes (what ran and the result) are required. Clears the agent marker.", inputSchema: obj({ id: idProp, notes: { type: "string", maxLength: caps.notes } }, ["id", "notes"]) },
+  { name: "move_to_verify", description: "Move an in-progress card to verify. Verify notes (what ran and the result) are required. Optional howToVerify: manual checks for the user as `- [ ]` lines, one per check (appended, never replaces). Clears the agent marker.", inputSchema: obj({ id: idProp, notes: { type: "string", maxLength: caps.notes }, howToVerify: { type: "string", maxLength: caps.steps } }, ["id", "notes"]) },
+  { name: "set_how_to_verify", description: "Append manual checks to How to verify as `- [ ]` lines, one per check. Only for in-progress or verify cards. Existing text is kept; steps already present are skipped.", inputSchema: obj({ id: idProp, steps: { type: "string", maxLength: caps.steps } }, ["id", "steps"]) },
   { name: "add_card", description: "Create a card in inbox for the user to triage.", inputSchema: obj({ title: { type: "string", maxLength: caps.title }, description: { type: "string", maxLength: caps.description }, type: { type: "string", enum: [...types] }, needsYou: { type: "boolean" } }, ["title"]) },
   { name: "add_note", description: "Append a line to a card's verify notes.", inputSchema: obj({ id: idProp, text: { type: "string", maxLength: caps.text } }, ["id", "text"]) },
   { name: "release_card", description: "Clear the agent marker and leave the card in its column.", inputSchema: obj({ id: idProp }, ["id"]) },
@@ -85,12 +86,22 @@ export function createMcp(root: string, suffix = () => randomBytes(2).toString("
     move_to_verify(a) {
       const id = argId(a);
       const notes = argStr(a, "notes", caps.notes);
+      const steps = argStr(a, "howToVerify", caps.steps, false);
       const c = find(id);
       if (c.column !== "in-progress") refuse(`card ${id} is in ${c.column}; only in-progress cards can move to verify`);
       guardOther(c);
-      moveCard(dir, id, "verify", null, notes, ctx());
+      moveCard(dir, id, "verify", null, notes, ctx(), steps || undefined);
       const out = stopAgent(dir, id, ctx());
       return text(`moved to verify: ${line(out)}`, brief(out));
+    },
+    set_how_to_verify(a) {
+      const id = argId(a);
+      const steps = argStr(a, "steps", caps.steps);
+      const c = find(id);
+      if (c.column !== "in-progress" && c.column !== "verify") refuse(`card ${id} is in ${c.column}; steps can only be added to in-progress or verify cards`);
+      guardOther(c);
+      const out = setSteps(dir, id, steps, ctx());
+      return text(out === c ? `no new steps for ${line(out)}` : `steps added to ${line(out)}`, brief(out));
     },
     add_card(a) {
       const title = argStr(a, "title", caps.title);
@@ -138,7 +149,7 @@ export function createMcp(root: string, suffix = () => randomBytes(2).toString("
           protocolVersion: v,
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "board", version: "1.0.0" },
-          instructions: "Local kanban board. Use next_card, claim_card, add_note, move_to_verify. Agents cannot move cards to todo, planned or done.",
+          instructions: "Local kanban board. Use next_card, claim_card, add_note, move_to_verify. Manual checks for the user go in How to verify as `- [ ]` lines (howToVerify / set_how_to_verify), not in notes. Agents cannot move cards to todo, planned or done.",
         });
       }
       case "ping": return ok(m.id, {});

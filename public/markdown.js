@@ -241,3 +241,12 @@ export function listToTasks(src) {
   });
   return parts.join("");
 }
+
+// Tick boxes squeezed onto one line ("a. - [ ] b - [ ] c") get one line each. Fenced code is left alone.
+export function splitInlineTasks(src) {
+  let fence = false;
+  return String(src).split("\n").map((l) => {
+    if (/^\s*(```|~~~)/.test(l)) fence = !fence;
+    return fence ? l : l.replace(/(?<=\S)[ \t]+(?=[-*+] \[[ xX]\](?: |$))/g, "\n");
+  }).join("\n");
+}

@@ -51,9 +51,9 @@ describe("protocol", () => {
     expect((m.handle(null) as any).error.code).toBe(-32600);
     expect((m.handle({ id: 1 }) as any).error.code).toBe(-32600);
   });
-  test("tools/list names the eight tools with object schemas", () => {
+  test("tools/list names the nine tools with object schemas", () => {
     const tools = rpc(createMcp(root), "tools/list").result.tools;
-    expect(tools.map((t: any) => t.name).sort()).toEqual(["add_card", "add_note", "board_list", "board_show", "claim_card", "move_to_verify", "next_card", "release_card"]);
+    expect(tools.map((t: any) => t.name).sort()).toEqual(["add_card", "add_note", "board_list", "board_show", "claim_card", "move_to_verify", "next_card", "release_card", "set_how_to_verify"]);
     for (const t of tools) expect(t.inputSchema.type).toBe("object");
   });
   test("unknown tool and bad arguments are protocol errors", () => {
@@ -171,7 +171,7 @@ describe("tools", () => {
     expect(call(m, "add_note", { id: c.id, text: "first" }).isError).toBeUndefined();
     call(m, "add_note", { id: c.id, text: "second\nline" });
     const got = card(c.id);
-    expect(got.verifyNotes.split("\n")).toHaveLength(2);
+    expect(got.verifyNotes.split("\n")).toHaveLength(3);
     expect(got.verifyNotes).toContain("first");
     expect(got.history.filter((h) => h.text === "verify notes updated")).toHaveLength(2);
     expect(got.column).toBe("in-progress");
@@ -202,6 +202,35 @@ describe("tools", () => {
     expect(Date.parse(after.agentAt)).toBeGreaterThan(Date.parse(old) + 60000);
     expect(after.updated).toBe(before.updated);
     expect(after.history).toEqual(before.history);
+  });
+});
+
+describe("how to verify", () => {
+  test("set_how_to_verify appends deduped steps in in-progress and verify only", () => {
+    const m = hello();
+    const c = mk("s", "in-progress");
+    writeFileSync(join(dir, "cards", c.file), readFileSync(join(dir, "cards", c.file), "utf8") + "\n## How to verify\nuser text\n");
+    const r = call(m, "set_how_to_verify", { id: c.id, steps: "- [ ] a - [ ] b" });
+    expect(r.isError).toBeUndefined();
+    call(m, "set_how_to_verify", { id: c.id, steps: "- [ ] b\n- [ ] c" });
+    expect(card(c.id).howToVerify).toBe("user text\n- [ ] a\n- [ ] b\n- [ ] c");
+    expect(card(c.id).history.filter((h) => h.text === "verify steps added").map((h) => h.by)).toEqual(["mcp:claude-code", "mcp:claude-code"]);
+    for (const col of ["inbox", "planned", "todo", "done"]) {
+      const o = mk(`o ${col}`, col);
+      expect(call(m, "set_how_to_verify", { id: o.id, steps: "- [ ] x" }).isError).toBe(true);
+      expect(card(o.id).howToVerify).toBe("");
+    }
+    const v = mk("v", "verify");
+    expect(call(m, "set_how_to_verify", { id: v.id, steps: "- [ ] x" }).isError).toBeUndefined();
+    for (const a of [{ id: c.id }, { id: c.id, steps: "" }, { id: c.id, steps: "x".repeat(5001) }, { id: 99, steps: "x" }]) expect(call(m, "set_how_to_verify", a).isError).toBe(true);
+  });
+  test("move_to_verify accepts howToVerify", () => {
+    const m = hello();
+    const c = mk("w", "todo");
+    call(m, "claim_card", { id: c.id });
+    expect(call(m, "move_to_verify", { id: c.id, notes: "ran", howToVerify: "- [ ] phone - [ ] desktop" }).isError).toBeUndefined();
+    expect(card(c.id)).toMatchObject({ column: "verify", howToVerify: "- [ ] phone\n- [ ] desktop" });
+    expect(card(c.id).verifyNotes).not.toContain("[ ]");
   });
 });
 

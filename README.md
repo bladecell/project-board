@@ -17,7 +17,8 @@ Then add `~/.bun/bin` to PATH if the installer says so (`fish_add_path ~/.bun/bi
 board init                      # create the board dir, update .gitignore, append workflow to CLAUDE.md (if it exists)
 board                           # start the web board on http://127.0.0.1:4747 and open the browser
 board add "title" --type bug --task P2.3 --phase P2 --lane fw --needs-you [--column todo] [--blocked]
-board move 7 verify --notes "ran tests, all green"
+board move 7 verify --notes "ran tests, all green" --steps "- [ ] flash and watch the log"
+board steps 7 --steps "- [ ] one\n- [ ] two"   # append to How to verify (or pipe on stdin); duplicates skipped
 board list [column]             # one line per card; done is hidden unless named
 board show 7
 board start 7 [--session label] # mark an agent as working on card 7 (no column move)
@@ -77,6 +78,8 @@ board install-mcp --dry-run        # print the resulting files, write nothing
 ```
 
 It merges into existing files: other servers, keys, key order and other hooks are kept, hooks are never duplicated, and a second run changes nothing. Files must be plain JSON; with comments, trailing commas or invalid JSON it refuses and writes nothing. Writes are atomic. It warns if `board` is not on PATH. `board mcp-config claude|opencode|opencode-v1` only prints the JSON.
+
+Manual checks go in How to verify as `- [ ]` lines, never in the verify notes (notes are what the agent ran and the result): `move_to_verify` takes an optional `howToVerify`, and `set_how_to_verify` appends steps to in-progress or verify cards (never deletes existing text, skips duplicates). Squeezed-together `- [ ]` items are split one per line, and notes keep their line breaks.
 
 Tools: `board_list`, `board_show`, `next_card` (top todo card no live agent holds), `claim_card` (todo or in-progress to in-progress, sets the agent marker; refused if another live agent holds it), `move_to_verify` (in-progress to verify, notes required, clears the marker), `add_card` (inbox only), `add_note` (appends to verify notes), `release_card`. Rules enforced in the server: agents never move cards to done, planned or todo, never move a card out of inbox, cannot delete, and cannot edit title, type, phase, lane or flags of existing cards. History lines are tagged `mcp:<client name>`. Every tool call refreshes the heartbeat of the cards this server holds, so the live indicator works without hooks. `board init` writes the workflow block to AGENTS.md (opencode reads it) as well as CLAUDE.md.
 

@@ -119,3 +119,21 @@ test("prompt prints the instruction for a card", () => {
   expect(r.stdout.toString()).toMatch(/^Look at board card #1: ".*"\. It is not approved yet\./);
   expect(Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, "prompt", "999"]).exitCode).toBe(1);
 });
+
+describe("steps", () => {
+  const run = (stdin: string | undefined, ...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a], { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
+  const how = () => /## How to verify\n([\s\S]*?)(\n## |\n*$)/.exec(board("show", "1"))?.[1];
+  test("move --steps splits literal \\n and flattened items; steps via flag and stdin append without duplicates", () => {
+    board("add", "stepper", "--column", "in-progress");
+    const id = /^(\d+)/.exec(board("list", "in-progress").split("\n").find((l) => l.includes("stepper"))!)![1];
+    const sh = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a]);
+    expect(sh("move", id, "verify", "--notes", "ran it", "--steps", "- [ ] a\\n- [ ] b - [ ] c").exitCode).toBe(0);
+    expect(sh("steps", id, "--steps", "- [ ] c\n- [ ] d").exitCode).toBe(0);
+    expect(run("- [ ] e\n- [ ] a\n", "steps", id).exitCode).toBe(0);
+    const shown = board("show", id);
+    expect(shown).toContain("## How to verify\n- [ ] a\n- [ ] b\n- [ ] c\n- [ ] d\n- [ ] e\n");
+    expect(shown).toContain("verify steps added");
+    expect(run(undefined, "steps", id).exitCode).toBe(1);
+    void how;
+  });
+});
