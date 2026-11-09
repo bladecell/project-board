@@ -20,3 +20,12 @@ test("show prints created, updated and cli-sourced history", () => {
   expect(out).toMatch(/· moved inbox → verify · cli$/m);
   expect(out).toMatch(/· verify notes updated · cli$/m);
 });
+
+test("show lists linked commits from git", () => {
+  const git = (...a: string[]) => Bun.spawnSync(["git", "-c", "user.name=T", "-c", "user.email=t@t", ...a], { cwd: root });
+  git("init", "-q");
+  git("commit", "-q", "--allow-empty", "-m", "fix thing #1");
+  const out = board("show", "1");
+  expect(out).toMatch(/^Commits \(1\)$/m);
+  expect(out).toMatch(/^[0-9a-f]{7}  \d{4}-\d\d-\d\d  fix thing #1$/m);
+});

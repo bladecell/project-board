@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { boardDir, initBoard } from "./lib";
+import { boardDir, createCard, initBoard } from "./lib";
 import { startServer } from "./server";
 
 let root: string, srv: ReturnType<typeof startServer>, base: string;
@@ -77,5 +77,40 @@ describe("server", () => {
     expect(mv.history.at(-1)).toMatchObject({ text: "moved inbox → verify", by: "ui" });
     const noop = await (await post(`/api/cards/${c.id}/move`, JSON.stringify({ column: "verify" }))).json();
     expect(noop.history).toHaveLength(3);
+  });
+});
+
+describe("commit links", () => {
+  let groot: string, gsrv: ReturnType<typeof startServer>, gbase: string;
+  const git = (...a: string[]) => Bun.spawnSync(["git", "-c", "user.name=T", "-c", "user.email=t@t", ...a], { cwd: groot });
+  beforeAll(() => {
+    groot = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "board-srvgit-"));
+    git("init", "-q");
+    initBoard(groot);
+    for (const t of ["one", "two"]) createCard(boardDir(groot), { title: t, ...(t === "one" ? { taskId: "P2.3" } : {}) }, { by: "cli" });
+    git("commit", "-q", "--allow-empty", "-m", "P2.3: first");
+    git("commit", "-q", "--allow-empty", "-m", "P2.30: other");
+    git("commit", "-q", "--allow-empty", "-m", "P2.3 and #2");
+    gsrv = startServer(boardDir(groot), 0, "g");
+    gbase = `http://127.0.0.1:${gsrv.port}`;
+  });
+  afterAll(() => { gsrv.close(); rmSync(groot, { recursive: true, force: true }); });
+
+  test("list has commitCount, detail has newest-first commits", async () => {
+    const list = await (await fetch(`${gbase}/api/cards`)).json();
+    expect(list.map((c: { commitCount: number }) => c.commitCount)).toEqual([2, 1]);
+    expect(list[0]).not.toHaveProperty("commits");
+    const one = await (await fetch(`${gbase}/api/cards/1`)).json();
+    expect(one.commits.map((c: { subject: string }) => c.subject)).toEqual(["P2.3 and #2", "P2.3: first"]);
+    expect(Object.keys(one.commits[0]).sort()).toEqual(["at", "author", "hash", "short", "subject"]);
+    expect((await fetch(`${gbase}/api/cards/99`)).status).toBe(404);
+  });
+
+  test("outside a git repo commits are empty, not an error", async () => {
+    const c = await (await fetch(`${base}/api/cards`)).json();
+    expect(Array.isArray(c)).toBe(true);
+    const made = await (await post("/api/cards", JSON.stringify({ title: "ng" }))).json();
+    const d = await (await fetch(`${base}/api/cards/${made.id}`)).json();
+    expect(d).toMatchObject({ commitCount: 0, commits: [] });
   });
 });

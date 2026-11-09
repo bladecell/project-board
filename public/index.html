@@ -137,6 +137,8 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 .log li { display: flex; flex-wrap: wrap; gap: 2px 10px; }
 .log time, .log .src { color: var(--muted); font-variant-numeric: tabular-nums; }
 .log .src { margin-left: auto; }
+.log .hash { font-family: var(--mono); color: var(--muted); }
+.commits-n { font-variant-numeric: tabular-nums; }
 .hint { color: var(--muted); font-size: 13px; margin: 0; }
 @media (max-width: 600px) { dialog { height: 100dvh; border-radius: 0; } }
 @media (prefers-reduced-motion: no-preference) { button { transition: background-color .12s; } }
@@ -178,6 +180,10 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
       <h3>History</h3>
       <p class="hint" id="stamps"></p>
       <ol id="hist"></ol>
+    </section>
+    <section class="log" id="commitsBox" aria-label="Commits" hidden>
+      <h3>Commits</h3>
+      <ol id="commits"></ol>
     </section>
     <p class="hint" id="formMsg" role="status"></p>
     <div class="actions">
@@ -294,6 +300,7 @@ function cardEl(c) {
   const meta = h("div", { className: "meta" }, h("span", { className: `pill ${typeList.includes(c.type) ? c.type : "task"}`, textContent: c.type }),
     h("span", { className: "ref", textContent: ref }), showPhase && h("span", { className: "chip", textContent: c.phase }), c.lane && h("span", { className: "chip", textContent: c.lane }),
     c.needsYou && h("span", { className: "flag need", textContent: "Needs you" }), c.blocked && h("span", { className: "flag block", textContent: "Blocked" }),
+    c.commitCount > 0 && h("span", { className: "commits-n", textContent: `${c.commitCount} ${c.commitCount === 1 ? "commit" : "commits"}` }),
     c.updated && h("span", { className: "age", textContent: age(c.updated), title: `Updated ${when(c.updated)}` }));
   const el = h("article", { className: "card", draggable: true, tabIndex: 0, role: "button", ariaLabel: `Open card ${c.id}: ${c.title}` },
     h("span", { className: "title", textContent: c.title }), meta);
@@ -353,8 +360,15 @@ function openCard(id) {
   $("#formMsg").textContent = "";
   refreshExtras();
   renderLog();
+  $("#commitsBox").hidden = true;
+  api(`/api/cards/${id}`).then((d) => { if (openId === id) renderCommits(d.commits); }).catch(() => {});
   dlg.showModal();
   form.title.focus();
+}
+
+function renderCommits(list = []) {
+  $("#commitsBox").hidden = !list.length;
+  $("#commits").replaceChildren(...list.map((k) => h("li", {}, h("span", { className: "hash", textContent: k.short }), h("span", { textContent: k.subject }), h("time", { className: "src", dateTime: k.at, textContent: new Date(k.at).toLocaleDateString() }))));
 }
 
 function renderLog() {

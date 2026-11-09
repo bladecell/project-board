@@ -5,6 +5,7 @@ import {
   boardDir, boardRel, columns, createCard, hasBoard, initBoard, loadCards, moveCard, serializeCard, sortCards, types,
   type Card,
 } from "./lib";
+import { getCommits, linkCommits } from "./commits";
 import { startServer } from "./server";
 
 const usage = `board                      start the web board in this project and open the browser
@@ -90,6 +91,8 @@ try {
     const id = cardId(args[0]);
     const c = loadCards(dir).find((x) => x.id === id) ?? fail(`no card ${id}`);
     console.log(`# ${join(dir, "cards", c.file)}\n${serializeCard(c)}`);
+    const linked = linkCommits(await getCommits(dir), [c]).get(id) ?? [];
+    if (linked.length) console.log(`\nCommits (${linked.length}${linked.length > 50 ? ", newest 50" : ""})\n${linked.slice(0, 50).map((k) => `${k.short}  ${k.at.slice(0, 10)}  ${k.subject}`).join("\n")}`);
   } else fail(`unknown command "${cmd}"\n${usage}`);
 } catch (e) {
   fail((e as Error).message);

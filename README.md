@@ -19,6 +19,8 @@ board list [column]             # one line per card; done is hidden unless named
 board show 7
 ```
 
+`board show` also lists the git commits linked to a card. Links are computed live from `git log` (last 2000 commits, nothing stored in the card): a commit subject containing the card's `taskId` or `#<id>` as a whole token (`P2.3` does not match `P2.30` or `P2.3b`). No git repo means no commits. The web UI shows a commit count on the card and the list in the card panel (`GET /api/cards/:id` returns `commits`; the list endpoint returns `commitCount`).
+
 Options: `--dir <project root>` (default cwd), `--port <n>`, `--no-open`.
 The server binds 127.0.0.1 only. Drag cards between columns, paste screenshots into a card body, edit everything in the detail panel. The board reloads when files change. Drag and drop needs a mouse; on touch use the Column field in the card panel.
 

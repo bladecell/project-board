@@ -1,5 +1,6 @@
 import { mkdirSync, watch } from "node:fs";
 import { join } from "node:path";
+import { getCommits, linkCommits } from "./commits";
 import { atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
 
 const ui = { by: "ui" } as const;
@@ -15,6 +16,7 @@ class HttpError extends Error {
 
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: security });
 const publicCard = ({ file, ...c }: Card) => c;
+const maxCardCommits = 50;
 
 async function readBody(req: Request, max: number) {
   if (Number(req.headers.get("content-length") ?? 0) > max) throw new HttpError(413, "body too large");
@@ -69,7 +71,11 @@ export function startServer(dir: string, port: number, name: string) {
     const bg = m === "GET" && p.match(/^\/contour-(light|dark)\.svg$/);
     if (bg) return new Response(Bun.file(join(import.meta.dir, `public/contour-${bg[1]}.svg`)), { headers: { ...security, "content-type": "image/svg+xml", "cache-control": "max-age=86400" } });
     if (m === "GET" && p === "/api/info") return json({ name, columns });
-    if (m === "GET" && p === "/api/cards") return json(sortCards(loadCards(dir)).map(publicCard));
+    if (m === "GET" && p === "/api/cards") {
+      const cards = sortCards(loadCards(dir));
+      const links = linkCommits(await getCommits(dir), cards);
+      return json(cards.map((c) => ({ ...publicCard(c), commitCount: links.get(c.id)?.length ?? 0 })));
+    }
     if (m === "GET" && p === "/api/events") {
       server.timeout(req, 0);
       let ctl: ReadableStreamDefaultController<string>;
@@ -85,6 +91,13 @@ export function startServer(dir: string, port: number, name: string) {
     const cm = /^\/api\/cards\/(\d{1,9})(\/move)?$/.exec(p);
     if (cm) {
       const id = cardId(cm[1]);
+      if (m === "GET" && !cm[2]) {
+        const cards = loadCards(dir);
+        const card = cards.find((c) => c.id === id);
+        if (!card) throw new HttpError(404, "no card " + id);
+        const all = linkCommits(await getCommits(dir), [card]).get(id) ?? [];
+        return json({ ...publicCard(card), commitCount: all.length, commits: all.slice(0, maxCardCommits) });
+      }
       if (m === "PUT" && !cm[2]) return json(publicCard(updateCard(dir, id, await readJson(req), ui)));
       if (m === "DELETE" && !cm[2]) { deleteCard(dir, id); return json({ ok: true }); }
       if (m === "POST" && cm[2]) {
