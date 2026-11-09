@@ -87,9 +87,12 @@ header select { width: auto; min-width: 130px; }
 .empty { color: var(--muted); font-size: 13px; padding: 4px 10px; margin: 0; }
 .card { flex: none; background: var(--card); border-radius: 6px; padding: 8px 10px; cursor: grab; display: flex; flex-direction: column; gap: 6px; }
 .card:hover { background: var(--line-soft); }
-.card:focus-visible { outline-offset: -3px; }
 .card.dragging { opacity: .4; }
-.card .title { font-size: 14px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+.card-open { display: block; width: 100%; min-height: 0; padding: 0; background: none; border-radius: 4px; text-align: left; font-size: 14px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; cursor: inherit; pointer-events: none; }
+.card-open:hover { background: none; }
+.card:has(.card-open:focus-visible) { outline: 3px solid var(--focus); outline-offset: -3px; }
+@supports selector(:has(a)) { .card-open:focus-visible { outline: none; } }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .meta { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 18px; color: var(--muted); }
 .tags { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .pill { padding: 0 6px; border-radius: 4px; font-weight: 600; line-height: 18px; }
@@ -100,12 +103,12 @@ header select { width: auto; min-width: 130px; }
 .ref { font-variant-numeric: tabular-nums; }
 .chip { padding: 0 6px; line-height: 18px; background: var(--line-soft); border-radius: 4px; max-width: 100%; overflow-wrap: anywhere; }
 .card { position: relative; }
-.copy-card { position: absolute; top: 0; right: 0; width: 44px; height: 36px; min-height: 36px; padding: 0; display: grid; place-items: center; background: transparent; color: var(--muted); opacity: 0; }
-.card:hover .copy-card, .card:focus-within .copy-card, .copy-card:focus-visible { opacity: 1; }
-.copy-card:hover { background: transparent; color: var(--text); }
-@media (hover: none) { .copy-card { opacity: 1; } }
-.copy-card svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-.card.has-copy .title { padding-right: 28px; }
+.card-act { position: absolute; top: 0; right: 0; width: 44px; height: 36px; min-height: 36px; padding: 0; display: grid; place-items: center; background: transparent; color: var(--muted); opacity: 0; }
+.card:hover .card-act, .card:focus-within .card-act, .card-act:focus-visible { opacity: 1; }
+.card-act:hover { background: transparent; color: var(--text); }
+@media (hover: none) { .card-act { opacity: 1; } }
+.card-act svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+@media (hover: none) { .card.has-copy .card-open { padding-right: 36px; } }
 #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 10; padding: 10px 14px; border-radius: 8px; background: var(--text); color: var(--bg); font-size: 13px; opacity: 0; pointer-events: none; }
 #toast.show { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) { #toast { transition: opacity .15s; } }
@@ -226,10 +229,11 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 <dialog id="promptDlg" aria-label="Prompt to copy"><form method="dialog"><p class="hint">Copy this with Ctrl+C, then paste it into your agent.</p><textarea id="promptText" readonly rows="6"></textarea><div class="actions"><button type="submit" class="primary">Close</button></div></form></dialog>
 <main id="board" aria-label="Kanban board"><p class="empty">Loading board</p></main>
 
-<dialog id="dlg" aria-labelledby="dlgTitle">
+<dialog id="dlg" aria-labelledby="dlgHeading">
   <form id="form" method="dialog">
+    <h2 id="dlgHeading" class="sr-only"></h2>
     <div id="dlgAgent" hidden></div>
-    <label class="f"><span id="dlgTitle">Title</span><input name="title" required maxlength="200"></label>
+    <label class="f"><span id="dlgTitle">Title</span><input name="title" required maxlength="200" aria-label="Title"></label>
     <div class="row">
       <label class="f"><span>Column</span><select name="column"></select></label>
       <label class="f"><span>Type</span><select name="type"></select></label>
@@ -471,20 +475,18 @@ function cardEl(c) {
     c.tasksTotal > 0 && h("span", { className: `tasks-n${c.tasksDone === c.tasksTotal ? " full" : ""}`, textContent: `${c.tasksDone}/${c.tasksTotal}`, title: `${c.tasksDone} of ${c.tasksTotal} subtasks done` }),
     c.commitCount > 0 && h("span", { className: "commits-n", textContent: `${c.commitCount} ${c.commitCount === 1 ? "commit" : "commits"}` }));
   const meta = h("div", { className: "meta" }, tags, c.updated && h("span", { className: "age", textContent: age(c.updated), title: `Updated ${when(c.updated)}` }));
-  const el = h("article", { className: "card", draggable: true, tabIndex: 0, role: "button", ariaLabel: `Open card ${c.id}: ${c.title}` },
-    h("span", { className: "title", textContent: c.title }), meta);
+  const open = h("button", { type: "button", className: "card-open", textContent: c.title, ariaLabel: `Open card ${c.id}: ${c.title}` });
+  open.dataset.act = "open";
+  const el = h("article", { className: "card", draggable: true }, open, meta);
   el.dataset.id = c.id;
-  el.dataset.act = "open";
   if (c.column !== "done" && c.column !== "verify") {
-    const b = h("button", { type: "button", className: "copy-card", title: c.column === "todo" || c.column === "in-progress" ? "Copy prompt for an agent" : "Copy investigate prompt (card not approved)", ariaLabel: `Copy prompt for card ${c.id}` }, copyIcon());
-    b.onclick = (e) => { e.stopPropagation(); copyPrompt(c); };
-    b.onkeydown = (e) => e.stopPropagation();
+    const b = h("button", { type: "button", className: "card-act", title: c.column === "todo" || c.column === "in-progress" ? "Copy prompt for an agent" : "Copy investigate prompt (card not approved)", ariaLabel: `Copy prompt for card ${c.id}` }, copyIcon());
+    b.onclick = () => copyPrompt(c);
     b.dataset.act = "copy";
     el.classList.add("has-copy");
     el.append(b);
   }
-  el.onclick = () => openCard(c.id);
-  el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openCard(c.id); } };
+  el.onclick = (e) => { if (!e.target.closest("button:not(.card-open)")) openCard(c.id); };
   el.ondragstart = (e) => { e.dataTransfer.setData("text/plain", String(c.id)); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); dragging = true; };
   el.ondragend = () => { el.classList.remove("dragging"); clearDrop(); dragging = false; if (renderPending) { renderPending = false; render(); } };
   return el;
@@ -533,6 +535,7 @@ function openCard(id) {
   openId = id;
   openerId = id;
   $("#dlgTitle").textContent = `Card #${id}`;
+  $("#dlgHeading").textContent = `Card #${id}: ${c.title}`;
   for (const k of ["title", "column", "type", "taskId", "phase", "lane", "description", "verifyNotes", "howToVerify"]) form[k].value = c[k];
   form.needsYou.checked = c.needsYou;
   form.blocked.checked = c.blocked;
