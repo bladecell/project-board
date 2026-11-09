@@ -32,6 +32,14 @@ glass:
 ## Flat
 Everything else: cards, chips, inputs, forms, lists, buttons. No shadow, blur or effects.
 
+## Scale
+- Type: 12 meta and chips, 13 labels and hints, 14 card titles and column controls, 15 body and fields, 20 board title.
+- Radius: 4 chips, 6 controls and cards, 8 columns, header, toast, 16 dialogs.
+- Space: 4, 8, 12, 16. Controls 44px high; the card copy button is 44x36 inside the card.
+- Chip, flag and type-pill text pairs are all at least 7:1; muted text on cards and chips at least 4.9:1.
+- `--link` (#1d4ed8 light, #93c5fd dark) for links in rendered markdown: the accent blue is 4.1:1 on the soft fill.
+- Composer: title textarea, then a Type select (flat soft fill), Add card, cancel.
+
 ## Notes
 - Dark mode follows `prefers-color-scheme`; both token sets have dark values in `public/index.html`.
 - Glass primary #6366f1 is 4.47:1 with white text, so it is used for focus ring and checkboxes only. The Save button uses flat primary.
