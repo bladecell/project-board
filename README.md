@@ -3,10 +3,13 @@
 Local kanban board for a project. Cards are markdown files, so agents and humans share one source of truth. Bun only, no dependencies, no build step.
 
 ## Install
+One command, any machine with git (installs bun if missing, clones to `~/.local/share/project-board`, links `board`). Re-run it to update.
 
 ```sh
-bun link        # puts `board` in ~/.bun/bin; make sure that is on PATH
+curl -fsSL https://raw.githubusercontent.com/bladecell/project-board/master/install.sh | bash
 ```
+
+Then add `~/.bun/bin` to PATH if the installer says so (`fish_add_path ~/.bun/bin` on fish). Manual install: clone the repo and run `bun link` in it.
 
 ## Use
 
