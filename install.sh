@@ -27,6 +27,8 @@ else
 fi
 
 (cd "$dir" && bun link >/dev/null)
+# ~/.bun/bin is often missing from PATH (fish, agent shells); link into ~/.local/bin when that is on PATH.
+case ":$PATH:" in *":$HOME/.local/bin:"*) mkdir -p "$HOME/.local/bin" && ln -sf "$HOME/.bun/bin/board" "$HOME/.local/bin/board" ;; esac
 say "Installed: $(command -v board || echo "$HOME/.bun/bin/board")"
 if ! command -v board >/dev/null; then
   case "$(basename "${SHELL:-}")" in
