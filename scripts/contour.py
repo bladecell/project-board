@@ -4,8 +4,8 @@ import math, random, sys
 W, H, STEP, LEVELS = 1600, 1000, 3, 11
 seed = int(sys.argv[1]) if len(sys.argv) > 1 else random.randrange(10**6)
 random.seed(seed); print('seed', seed)
-waves = [(random.uniform(.003, .016), random.uniform(.003, .016), random.uniform(0, 6.28), random.uniform(.3, 1)) for _ in range(10)]
-warp = [(random.uniform(.002, .006), random.uniform(0, 6.28), random.uniform(.6, 2.2)) for _ in range(3)]
+waves = [(random.uniform(.002, .006), random.uniform(.002, .006), random.uniform(0, 6.28), random.uniform(.4, 1)) for _ in range(5)]
+warp = [(random.uniform(.001, .003), random.uniform(0, 6.28), random.uniform(.6, 1.6)) for _ in range(2)]
 def h(x, y):
   return sum(a * math.sin(kx * x + ky * y * (1 if i % 2 else -1) + p + sum(b * math.sin(f * (x if k % 2 else y) + q) for k, (f, q, b) in enumerate(warp))) for i, (kx, ky, p, a) in enumerate(waves))
 nx, ny = W // STEP + 1, H // STEP + 1
