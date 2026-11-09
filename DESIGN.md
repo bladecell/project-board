@@ -18,14 +18,14 @@ glass:
   surface-solid: "#ffffff"   # fallback without backdrop-filter
   text: "#1e293b"
   border: "rgba(255,255,255,0.3)"
-  effect: "backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.2)"
+  effect: "backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,0.2)"
   shadow: "0 8px 32px rgba(0,0,0,0.1)"
   rounded: 16px
 ```
 
 ## Glass
 - Card detail dialog (modal), over a dimmed backdrop.
-- Board columns: translucent per-column tint (inbox slate, planned blue, todo amber, in-progress violet, verify teal, done green) with `blur(12px)` over the contour wallpaper. No shadow.
+- Board columns: translucent per-column tint (inbox slate, planned blue, todo amber, in-progress violet, verify teal, done green) with `blur(6px)` over the contour wallpaper. No shadow.
 - Any future popover, floating toolbar or drag overlay.
 
 ## Flat
@@ -35,3 +35,4 @@ Everything else: header, cards, chips, inputs, forms, lists, buttons. No shadow,
 - Dark mode follows `prefers-color-scheme`; both token sets have dark values in `public/index.html`.
 - Glass primary #6366f1 is 4.47:1 with white text, so it is used for focus ring and checkboxes only. The Save button uses flat primary.
 - Inputs inside the dialog stay flat and solid.
+- One blur for every glass surface: `--blur: 6px` in `public/index.html`. Change it there only.
