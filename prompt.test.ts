@@ -4,7 +4,7 @@ import { buildPrompt, promptTitle } from "./public/prompt.js";
 describe("buildPrompt", () => {
   test("exact text for a plain card", () => {
     expect(buildPrompt({ id: 99, title: "Fix ISO-TP bounds" })).toBe(
-      'Work on board card #99: "Fix ISO-TP bounds". Read it with the board_show MCP tool (or run `board show 99`), claim it (claim_card / `board start 99`), follow the Board workflow in CLAUDE.md or AGENTS.md, and when finished move it to verify with notes on what you ran and the result. Do not move it to done.');
+      'Work on board card #99: "Fix ISO-TP bounds". Read it with the board_show MCP tool (or run `board show 99`), claim it (claim_card / `board start 99`), follow the Board workflow in CLAUDE.md or AGENTS.md, and when finished move it to verify with notes on what you ran and the result. If there is anything I should check by hand, add it to the verify notes as `- [ ]` tick boxes, one per check. Do not move it to done.');
   });
   test("single line, no stray quotes or backticks from the title", () => {
     const p = buildPrompt({ id: 1, title: 'a "b"\n`rm -rf`\r\n\tc\\' });
