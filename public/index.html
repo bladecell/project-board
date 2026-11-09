@@ -50,10 +50,13 @@ input:not([type=checkbox]):hover, select:hover, textarea:hover { background: var
 select { appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
 textarea { padding: 10px; min-height: 120px; resize: vertical; line-height: 1.45; }
 
-header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-h1 { font-size: 18px; margin: 0; flex: 1 1 auto; }
-header label { display: flex; gap: 8px; align-items: center; color: var(--muted); }
-header select { width: auto; min-width: 160px; }
+header { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; padding: 16px 16px 4px; }
+.brand h1 { font-size: 20px; margin: 0; line-height: 1.2; }
+#summary { margin: 2px 0 0; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#search { width: 220px; }
+header select { width: auto; min-width: 130px; }
+#needs[aria-pressed=true] { background: var(--need-bg); color: var(--need-text); font-weight: 600; }
 #banner { margin: 12px 16px 0; padding: 10px 14px; border-radius: 6px; background: var(--block-bg); color: var(--block-text); }
 #banner[hidden] { display: none; }
 
@@ -132,8 +135,13 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 </head>
 <body>
 <header>
-  <h1 id="name">Board</h1>
-  <label>Phase <select id="phase"><option value="">All phases</option></select></label>
+  <div class="brand"><h1 id="name">Board</h1><p id="summary"></p></div>
+  <div class="filters">
+    <input id="search" type="search" placeholder="Search cards" aria-label="Search cards" maxlength="100">
+    <select id="type" aria-label="Type"><option value="">All types</option><option value="bug">Bugs</option><option value="feature">Features</option><option value="task">Tasks</option><option value="decision">Decisions</option></select>
+    <select id="phase" aria-label="Phase"><option value="">All phases</option></select>
+    <button id="needs" type="button" aria-pressed="false">Needs you</button>
+  </div>
 </header>
 <div id="banner" role="alert" hidden></div>
 <main id="board" aria-label="Kanban board"><p class="empty">Loading board</p></main>
@@ -182,6 +190,10 @@ const store = {
 let cards = [];
 let columns = Object.keys(labels);
 let phase = store.get("board.phase");
+let typeF = store.get("board.type") || "";
+let needsOnly = false;
+let q = "";
+const matches = (c) => (!phase || c.phase === phase) && (!typeF || c.type === typeF) && (!needsOnly || c.needsYou) && (!q || `${c.title} ${c.taskId} ${c.description}`.toLowerCase().includes(q));
 let loaded = false;
 let openId = null;
 const drafts = {};
@@ -215,6 +227,10 @@ function render() {
   if (phase && !phases.includes(phase)) phases.push(phase);
   sel.replaceChildren(h("option", { value: "", textContent: "All phases" }), ...phases.map((p) => h("option", { value: p, textContent: p })));
   sel.value = phase;
+  $("#type").value = typeF;
+  $("#needs").setAttribute("aria-pressed", String(needsOnly));
+  const n = (f) => cards.filter(f).length;
+  $("#summary").textContent = [`${cards.length} cards`, n((c) => c.needsYou) && `${n((c) => c.needsYou)} need you`, n((c) => c.blocked) && `${n((c) => c.blocked)} blocked`].filter(Boolean).join(" · ");
 
   const board = $("#board");
   if (!loaded) { board.replaceChildren(h("p", { className: "empty", textContent: "Loading board" })); return; }
@@ -225,9 +241,9 @@ function render() {
 
 function columnEl(col) {
   const mine = cards.filter((c) => c.column === col);
-  const shown = mine.filter((c) => !phase || c.phase === phase);
+  const shown = mine.filter(matches);
   const list = h("div", { className: "list" }, ...shown.map(cardEl));
-  if (!shown.length) list.append(h("p", { className: "empty", textContent: mine.length ? "No cards in this phase" : "Nothing here" }));
+  if (!shown.length) list.append(h("p", { className: "empty", textContent: mine.length ? "No matching cards" : "Nothing here" }));
   const input = h("input", { placeholder: "Add a card", maxLength: 200, ariaLabel: `Add card to ${labels[col]}` });
   input.value = drafts[col] ?? "";
   input.oninput = () => { drafts[col] = input.value; };
@@ -375,6 +391,9 @@ async function onPaste(e) {
 }
 for (const k of ["description", "verifyNotes"]) form[k].addEventListener("paste", onPaste);
 
+$("#search").oninput = (e) => { q = e.target.value.trim().toLowerCase(); render(); };
+$("#type").onchange = (e) => { typeF = e.target.value; store.set("board.type", typeF); render(); };
+$("#needs").onclick = () => { needsOnly = !needsOnly; render(); };
 $("#phase").onchange = (e) => { phase = e.target.value; store.set("board.phase", phase); render(); };
 
 /* live reload */
