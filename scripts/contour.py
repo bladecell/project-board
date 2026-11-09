@@ -1,10 +1,13 @@
+# Usage: python3 scripts/contour.py [seed]   (no seed = new random wallpaper each run)
 # Generates public/contour-{light,dark}.svg: topographic lines from a sum-of-sines height field.
 import math, random, sys
-W, H, STEP, LEVELS = 1600, 1000, 3, 16
-random.seed(7)
-waves = [(random.uniform(.004, .012), random.uniform(.004, .012), random.uniform(0, 6.28), random.uniform(.5, 1)) for _ in range(7)]
+W, H, STEP, LEVELS = 1600, 1000, 3, 11
+seed = int(sys.argv[1]) if len(sys.argv) > 1 else random.randrange(10**6)
+random.seed(seed); print('seed', seed)
+waves = [(random.uniform(.003, .016), random.uniform(.003, .016), random.uniform(0, 6.28), random.uniform(.3, 1)) for _ in range(10)]
+warp = [(random.uniform(.002, .006), random.uniform(0, 6.28), random.uniform(.6, 2.2)) for _ in range(3)]
 def h(x, y):
-  return sum(a * math.sin(kx * x + ky * y * (1 if i % 2 else -1) + p + math.sin(y * .003 + i)) for i, (kx, ky, p, a) in enumerate(waves))
+  return sum(a * math.sin(kx * x + ky * y * (1 if i % 2 else -1) + p + sum(b * math.sin(f * (x if k % 2 else y) + q) for k, (f, q, b) in enumerate(warp))) for i, (kx, ky, p, a) in enumerate(waves))
 nx, ny = W // STEP + 1, H // STEP + 1
 g = [[h(i * STEP, j * STEP) for i in range(nx)] for j in range(ny)]
 lo, hi = min(map(min, g)), max(map(max, g))
