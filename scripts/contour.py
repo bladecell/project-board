@@ -4,10 +4,26 @@ import math, random, sys
 W, H, STEP, LEVELS = 1600, 1000, 3, 11
 seed = int(sys.argv[1]) if len(sys.argv) > 1 else random.randrange(10**6)
 random.seed(seed); print('seed', seed)
-waves = [(random.uniform(.002, .006), random.uniform(.002, .006), random.uniform(0, 6.28), random.uniform(.4, 1)) for _ in range(5)]
-warp = [(random.uniform(.001, .003), random.uniform(0, 6.28), random.uniform(.6, 1.6)) for _ in range(2)]
+# Perlin gradient noise, 3 octaves, rotated per octave so contours don't line up on the grid axes.
+perm = list(range(256)); random.shuffle(perm); perm *= 2
+angles = [random.uniform(0, 6.2832) for _ in range(256)]
+fade = lambda t: t * t * t * (t * (t * 6 - 15) + 10)
+def grad(ix, iy, dx, dy):
+  a = angles[perm[perm[ix & 255] + (iy & 255)]]
+  return math.cos(a) * dx + math.sin(a) * dy
+def perlin(x, y):
+  x0, y0 = math.floor(x), math.floor(y); dx, dy = x - x0, y - y0
+  u, v = fade(dx), fade(dy)
+  return lerp(lerp(grad(x0, y0, dx, dy), grad(x0 + 1, y0, dx - 1, dy), u),
+              lerp(grad(x0, y0 + 1, dx, dy - 1), grad(x0 + 1, y0 + 1, dx - 1, dy - 1), u), v)
+def lerp(a, b, t): return a + (b - a) * t
+octaves = [(1 / 900 * 2 ** o, .45 ** o, random.uniform(0, 6.2832), random.uniform(0, 500), random.uniform(0, 500)) for o in range(3)]
 def h(x, y):
-  return sum(a * math.sin(kx * x + ky * y * (1 if i % 2 else -1) + p + sum(b * math.sin(f * (x if k % 2 else y) + q) for k, (f, q, b) in enumerate(warp))) for i, (kx, ky, p, a) in enumerate(waves))
+  t = 0
+  for f, amp, r, ox, oy in octaves:
+    c, s_ = math.cos(r), math.sin(r)
+    t += amp * perlin((x * c - y * s_) * f + ox, (x * s_ + y * c) * f + oy)
+  return t
 nx, ny = W // STEP + 1, H // STEP + 1
 g = [[h(i * STEP, j * STEP) for i in range(nx)] for j in range(ny)]
 lo, hi = min(map(min, g)), max(map(max, g))
