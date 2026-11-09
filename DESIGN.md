@@ -25,7 +25,7 @@ glass:
 
 ## Glass
 - Card detail dialog (modal), over a dimmed backdrop.
-- Board columns: translucent per-column tint (inbox slate, planned blue, todo amber, in-progress violet, verify teal, done green) with `blur(6px)` over the contour wallpaper. No shadow.
+- Board columns: translucent per-column tint (inbox slate, planned blue, todo amber, in-progress violet, verify rose, done green) with `blur(6px)` over the contour wallpaper. No shadow.
 - Any future popover, floating toolbar or drag overlay.
 
 ## Flat
