@@ -27,10 +27,18 @@ glass:
 - Card detail dialog (modal), over a dimmed backdrop.
 - Header bar: translucent `--bar` fill with the shared blur.
 - Board columns: translucent per-column tint (inbox slate, planned blue, todo amber, in-progress violet, verify rose, done green) with `blur(6px)` over the contour wallpaper. No shadow.
-- Any future popover, floating toolbar or drag overlay.
+- Move popover (`#movePop`, native Popover API, anchored to the card's move button): glass border, 16px radius, shadow and blur, but the fill is 92% opaque (`--g-solid` mixed with transparent). No scrim sits behind it, so it needs near-solid contrast to stay readable over the cards. Its items are flat 44px rows; the current column is disabled and marked "Current".
+- Any future floating toolbar or drag overlay.
 
 ## Flat
 Everything else: cards, chips, inputs, forms, lists, buttons. No shadow, blur or effects.
+
+## Card structure
+- `article.card` is a plain, draggable container. It is not a button.
+- The title is a real `button.card-open` (accessible name `Open card N: title`). It has `pointer-events: none`, so mouse presses reach the draggable article (a button inside a draggable element breaks drag in Firefox); keyboard Enter and Space still activate it. A click anywhere on the card that is not another button opens it.
+- `.card-acts` holds the copy and Move buttons, top right. Pointer devices show them on hover and focus (40px); `hover: none` devices always show them at 44px and reserve 88px on the title.
+- Focus ring: `:has(.card-open:focus-visible)` draws a 3px inset ring on the whole card, so it is never clipped by the scrolling column.
+- The detail dialog is named by an `h2` ("Card #N: title"); the title input keeps its own label.
 
 ## Scale
 - Type: 12 meta and chips, 13 labels and hints, 14 card titles and column controls, 15 body and fields, 20 board title.
@@ -39,6 +47,11 @@ Everything else: cards, chips, inputs, forms, lists, buttons. No shadow, blur or
 - Chip, flag and type-pill text pairs are all at least 7:1; muted text on cards and chips at least 4.9:1.
 - `--link` (#1d4ed8 light, #93c5fd dark) for links in rendered markdown: the accent blue is 4.1:1 on the soft fill.
 - Composer: title textarea, then a Type select (flat soft fill), Add card, cancel.
+
+## Transparency
+- The wallpaper is a `position: fixed` layer (`body::before`, `z-index: -1`), not `background-attachment: fixed`.
+- `@media (prefers-reduced-transparency: reduce)` sets `--blur: 0px`, drops the wallpaper, and makes the header bar, column tints, dialog and popover opaque. `@supports not (backdrop-filter)` applies the same fills, so text never sits on an unblurred wallpaper.
+- No claim is made about rendering cost. Measure on the real device.
 
 ## Notes
 - Dark mode follows `prefers-color-scheme`; both token sets have dark values in `public/index.html`.
