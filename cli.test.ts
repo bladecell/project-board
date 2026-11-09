@@ -87,3 +87,13 @@ describe("agent commands", () => {
     expect(r.stdout.toString()).toContain("0001");
   });
 });
+
+describe("mcp-config", () => {
+  const cfg = (w: string) => JSON.parse(Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, "mcp-config", w]).stdout.toString());
+  test("prints valid JSON for each client", () => {
+    expect(cfg("claude")).toEqual({ mcpServers: { board: { command: "board", args: ["mcp"] } } });
+    expect(cfg("opencode").mcp.servers.board).toEqual({ type: "local", command: ["board", "mcp"] });
+    expect(cfg("opencode-v1").mcp.board).toMatchObject({ type: "local", command: ["board", "mcp"], enabled: true });
+    expect(Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "mcp-config", "x"]).exitCode).toBe(1);
+  });
+});

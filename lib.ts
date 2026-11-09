@@ -7,7 +7,7 @@ export const types = ["bug", "feature", "task", "decision"] as const;
 export type Column = (typeof columns)[number];
 export type CardType = (typeof types)[number];
 
-export type Source = "ui" | "cli";
+export type Source = "ui" | "cli" | `mcp:${string}`;
 export type Ctx = { by: Source; now?: Date };
 export type HistoryEntry = { at: string; text: string; by: Source };
 
@@ -59,7 +59,7 @@ export const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
 const cut = (s: string) => (s.length > maxEventText ? `${s.slice(0, maxEventText - 1)}…` : s);
 
 export function parseHistoryLine(l: string): HistoryEntry | null {
-  const m = /^- (\d{4}-\d\d-\d\dT[\d:.]+Z) · (.+) · (ui|cli)\s*$/.exec(l);
+  const m = /^- (\d{4}-\d\d-\d\dT[\d:.]+Z) · (.+) · (ui|cli|mcp:[A-Za-z0-9._-]{1,40})\s*$/.exec(l);
   return m ? { at: m[1], text: m[2], by: m[3] as Source } : null;
 }
 
@@ -324,9 +324,10 @@ const findCard = (dir: string, id: number) => {
   return c;
 };
 
-export function startAgent(dir: string, id: number, session: string, ctx: Ctx): Card {
+// raw keeps the full label (MCP servers); hook sessions are matched by their first 8 characters.
+export function startAgent(dir: string, id: number, session: string, ctx: Ctx, raw = false): Card {
   const old = findCard(dir, id);
-  const agent = agentLabel(session) || "claude";
+  const agent = (raw ? oneLine(session).slice(0, 40) : agentLabel(session)) || "claude";
   const at = iso(ctx.now ?? new Date());
   const same = old.agent === agent;
   const out: Card = same
@@ -346,8 +347,8 @@ export function stopAgent(dir: string, id: number, ctx: Ctx): Card {
 }
 
 // Heartbeat: refreshes agentAt only. Never touches updated or history, and skips writes within touchMinMs.
-export function touchAgents(dir: string, session: string, now = new Date()): number {
-  const label = agentLabel(session);
+export function touchAgents(dir: string, session: string, now = new Date(), exact = false): number {
+  const label = exact ? session : agentLabel(session);
   if (!label) return 0;
   let n = 0;
   for (const c of loadCards(dir)) {
@@ -371,6 +372,7 @@ Work is tracked on a local kanban board (\`board\` command). Data lives in \`${r
 - At the start of each session run \`board list todo\` and \`board list in-progress\`.
 - Move a card to in-progress when you start it, then run \`board start <id>\`. When done, move it to verify with \`board move <id> verify --notes "what ran + result"\` and run \`board stop <id>\`.
 - Only the user moves cards to done.
+- If the \`board\` MCP server is configured, use its tools instead (\`next_card\`, \`claim_card\`, \`add_note\`, \`move_to_verify\`, \`add_card\`, \`release_card\`); agents cannot move cards to todo, planned or done.
 - Add new items you find with \`board add "title"\`; they land in inbox. Use \`--needs-you\` for unsure items and decisions.
 ${end}
 `;
@@ -380,7 +382,8 @@ export function isIgnored(gitignore: string, rel: string) {
   return gitignore.split(/\r?\n/).some((l) => parents.includes(l.trim().replace(/^\/+|\/+$/g, "")));
 }
 
-export type InitResult = { dir: string; gitignore: "added" | "already"; claude: "appended" | "updated" | "present" | "missing" };
+type FileSync = "appended" | "updated" | "present" | "missing";
+export type InitResult = { dir: string; gitignore: "added" | "already"; claude: FileSync; agents: FileSync };
 
 export function initBoard(root: string): InitResult {
   const dir = boardDir(root);
@@ -396,25 +399,22 @@ export function initBoard(root: string): InitResult {
     gitignore = "added";
   }
 
-  const cmPath = join(root, "CLAUDE.md");
-  let claude: InitResult["claude"] = "missing";
-  if (existsSync(cmPath)) {
-    const cm = readFileSync(cmPath, "utf8");
+  const sync = (name: string): InitResult["claude"] => {
+    const p = join(root, name);
+    if (!existsSync(p)) return "missing";
+    const cm = readFileSync(p, "utf8");
     const s = cm.indexOf(start);
     const e = s >= 0 ? cm.indexOf(end, s) : -1;
-    if (s >= 0) {
-      claude = "present";
-      if (e >= 0) {
-        const next = `${cm.slice(0, s)}${workflowBlock(rel).trimEnd()}${cm.slice(e + end.length)}`;
-        if (next !== cm) {
-          writeFileSync(cmPath, next);
-          claude = "updated";
-        }
-      }
-    } else {
-      appendFileSync(cmPath, `${cm.endsWith("\n") ? "" : "\n"}\n${workflowBlock(rel)}`);
-      claude = "appended";
+    if (s < 0) {
+      appendFileSync(p, `${cm.endsWith("\n") ? "" : "\n"}\n${workflowBlock(rel)}`);
+      return "appended";
     }
-  }
-  return { dir, gitignore, claude };
+    const next = e >= 0 ? `${cm.slice(0, s)}${workflowBlock(rel).trimEnd()}${cm.slice(e + end.length)}` : cm;
+    if (next === cm) return "present";
+    writeFileSync(p, next);
+    return "updated";
+  };
+  const claude = sync("CLAUDE.md");
+  const agents = sync("AGENTS.md");
+  return { dir, gitignore, claude, agents };
 }

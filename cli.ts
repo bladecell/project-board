@@ -7,6 +7,7 @@ import {
 } from "./lib";
 import { getCommits, linkCommits } from "./commits";
 import { startServer } from "./server";
+import { runStdio } from "./mcp";
 
 const usage = `board                      start the web board in this project and open the browser
 board init                 create the board dir, update .gitignore and CLAUDE.md
@@ -17,6 +18,8 @@ board show <id>
 board start <id> [--session label]  mark an agent as working on the card (no column move)
 board stop <id>            clear the agent marker
 board touch                heartbeat for a Claude Code hook (reads hook JSON on stdin, silent)
+board mcp                  stdio MCP server for agents (Claude Code, opencode, ...); run from the project dir or pass --dir
+board mcp-config [claude|opencode|opencode-v1]  print the JSON to paste into .mcp.json or opencode.json
 board subtasks <id>         turn plain list items in the description into - [ ] subtasks
 options: --dir <project root> (default cwd), --port <n> (default 4747), --no-open
 columns: ${columns.join(", ")}`;
@@ -103,12 +106,24 @@ async function serve() {
 try {
   if (values.help || cmd === "help") console.log(usage);
   else if (cmd === "touch") await touch();
+  else if (cmd === "mcp") await runStdio(root);
+  else if (cmd === "mcp-config") {
+    const which = args[0] ?? "claude";
+    const cfg = which === "claude" ? { mcpServers: { board: { command: "board", args: ["mcp"] } } }
+      : which === "opencode" ? { $schema: "https://opencode.ai/config.json", mcp: { servers: { board: { type: "local", command: ["board", "mcp"] } } } }
+      : which === "opencode-v1" ? { $schema: "https://opencode.ai/config.json", mcp: { board: { type: "local", command: ["board", "mcp"], enabled: true } } }
+      : fail("usage: board mcp-config [claude|opencode|opencode-v1]");
+    console.log(JSON.stringify(cfg, null, 2));
+    console.error(`# paste into ${which === "claude" ? ".mcp.json" : "opencode.json"} in the project root`);
+  }
   else if (!cmd || cmd === "serve") await serve();
   else if (cmd === "init") {
     const r = initBoard(root);
     console.log(`board dir: ${r.dir}`);
     console.log(r.gitignore === "added" ? ".gitignore: added board path" : ".gitignore: already ignored");
-    console.log({ appended: "CLAUDE.md: appended Board workflow block", updated: "CLAUDE.md: updated Board workflow block", present: "CLAUDE.md: block already present", missing: "CLAUDE.md: not found, no workflow block added" }[r.claude]);
+    for (const [name, s] of [["CLAUDE.md", r.claude], ["AGENTS.md", r.agents]] as const) {
+      console.log({ appended: `${name}: appended Board workflow block`, updated: `${name}: updated Board workflow block`, present: `${name}: block already present`, missing: `${name}: not found, no workflow block added` }[s]);
+    }
     console.log(`start it with: board${root === process.cwd() ? "" : ` --dir ${root}`}`);
   } else if (cmd === "add") {
     const title = args.join(" ").trim();

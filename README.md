@@ -22,6 +22,7 @@ board list [column]             # one line per card; done is hidden unless named
 board show 7
 board start 7 [--session label] # mark an agent as working on card 7 (no column move)
 board stop 7                    # clear the marker
+board mcp                       # stdio MCP server for agents; board mcp-config prints the client config
 board subtasks 7                # plain list items in the description become - [ ] subtasks (idempotent)
 ```
 
@@ -55,6 +56,26 @@ To keep the heartbeat fresh, add this to your Claude Code `settings.json` (user 
 ```
 
 Start the card with `--session` set to the session id (or export `CLAUDE_SESSION_ID`), otherwise the label `claude` never matches a hook's `session_id`. `board init` refreshes the Board workflow block in CLAUDE.md between its markers, so older projects pick up the `start`/`stop` lines by running it again.
+
+## MCP server (Claude Code, opencode, others)
+
+`board mcp` is a stdio MCP server (newline-delimited JSON-RPC, no dependencies, tools only). Agents start it with the project as cwd; `--dir <root>` overrides. Print the config with `board mcp-config claude|opencode|opencode-v1` and paste it yourself, nothing edits your config.
+
+Claude Code, `.mcp.json` in the project root (Claude asks you to approve project servers once):
+
+```json
+{ "mcpServers": { "board": { "command": "board", "args": ["mcp"] } } }
+```
+
+opencode 2.x, `opencode.json` (`opencode mcp list` shows it as connected). opencode 1.x uses `{"mcp":{"board":{"type":"local","command":["board","mcp"],"enabled":true}}}` (`board mcp-config opencode-v1`):
+
+```json
+{ "$schema": "https://opencode.ai/config.json", "mcp": { "servers": { "board": { "type": "local", "command": ["board", "mcp"] } } } }
+```
+
+Tools: `board_list`, `board_show`, `next_card` (top todo card no live agent holds), `claim_card` (todo or in-progress to in-progress, sets the agent marker; refused if another live agent holds it), `move_to_verify` (in-progress to verify, notes required, clears the marker), `add_card` (inbox only), `add_note` (appends to verify notes), `release_card`. Rules enforced in the server: agents never move cards to done, planned or todo, never move a card out of inbox, cannot delete, and cannot edit title, type, phase, lane or flags of existing cards. History lines are tagged `mcp:<client name>`. Every tool call refreshes the heartbeat of the cards this server holds, so the live indicator works without hooks. `board init` writes the workflow block to AGENTS.md (opencode reads it) as well as CLAUDE.md.
+
+Custom channel/push notifications are Claude Code only and are not implemented.
 
 ## Data
 
