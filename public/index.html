@@ -298,7 +298,7 @@ let needsOnly = false;
 let q = "";
 const matches = (c) => (!phase || c.phase === phase) && (!typeF || c.type === typeF) && (!needsOnly || c.needsYou) && (!q || `${c.title} ${c.taskId} ${c.description}`.toLowerCase().includes(q));
 let loaded = false;
-let openId = null;
+let openId = null, openerId = null;
 const drafts = {};
 let composing = null;
 
@@ -326,11 +326,28 @@ async function load() {
   render();
 }
 
+let dragging = false, renderPending = false;
+let phaseKey = "";
+// Per-column view model: only what a card face shows, so unrelated changes (history, description) leave the DOM alone.
+const colKey = (col) => {
+  const mine = cards.filter((c) => c.column === col);
+  const shown = mine.filter(matches).map((c) => [c.id, c.type, c.taskId, c.phase, c.lane, c.title, c.needsYou, c.blocked, c.agent, agentLive(c), c.agent && age(c.agentAt), c.tasksDone, c.tasksTotal, c.commitCount, c.updated, age(c.updated)]);
+  return JSON.stringify([shown, mine.length, composing === col]);
+};
+const focusCard = (id, act) => {
+  const c = $(`.card[data-id="${id}"]`);
+  (c?.querySelector(`[data-act="${act}"]`) ?? c)?.focus();
+};
+
 function render() {
+  if (dragging) { renderPending = true; return; }
   const sel = $("#phase");
   const phases = [...new Set(cards.map((c) => c.phase).filter(Boolean))].sort();
   if (phase && !phases.includes(phase)) phases.push(phase);
-  sel.replaceChildren(h("option", { value: "", textContent: "All phases" }), ...phases.map((p) => h("option", { value: p, textContent: p })));
+  if (phases.join("\n") !== phaseKey) {
+    phaseKey = phases.join("\n");
+    sel.replaceChildren(h("option", { value: "", textContent: "All phases" }), ...phases.map((p) => h("option", { value: p, textContent: p })));
+  }
   sel.value = phase;
   $("#type").value = typeF;
   $("#needs").setAttribute("aria-pressed", String(needsOnly));
@@ -339,9 +356,27 @@ function render() {
 
   const board = $("#board");
   if (!loaded) { board.replaceChildren(h("p", { className: "empty", textContent: "Loading board" })); return; }
-  const hadFocus = !!document.activeElement?.closest?.(".composer");
-  board.replaceChildren(...columns.map(columnEl));
-  if (hadFocus) { const t = $(".composer textarea"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+
+  const ae = document.activeElement;
+  const focus = !board.contains(ae) ? null : ae.closest(".composer") ? { composer: true } : ae.closest(".card") ? { id: ae.closest(".card").dataset.id, act: ae.dataset.act } : null;
+  const old = new Map([...board.children].filter((e) => e.dataset?.col).map((e) => [e.dataset.col, e]));
+  const els = columns.map((col) => {
+    const key = colKey(col), prev = old.get(col);
+    if (prev && prev._key === key) return prev;
+    const el = columnEl(col);
+    el._key = key;
+    el._scroll = prev?.querySelector(".list").scrollTop ?? 0;
+    return el;
+  });
+  // Move only what differs: re-inserting a column resets its scroll position.
+  els.forEach((el, i) => { const cur = board.children[i]; if (cur !== el) board.insertBefore(el, cur ?? null); });
+  while (board.children.length > els.length) board.lastElementChild.remove();
+  for (const el of els) if (el._scroll) { el.querySelector(".list").scrollTop = el._scroll; el._scroll = 0; }
+
+  if (focus && !board.contains(document.activeElement)) {
+    if (focus.composer) { const t = $(".composer textarea"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+    else focusCard(focus.id, focus.act);
+  }
 }
 
 const plusIcon = () => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("aria-hidden", "true"); s.innerHTML = '<path d="M8 3v10M3 8h10"/>'; return s; };
@@ -439,17 +474,19 @@ function cardEl(c) {
   const el = h("article", { className: "card", draggable: true, tabIndex: 0, role: "button", ariaLabel: `Open card ${c.id}: ${c.title}` },
     h("span", { className: "title", textContent: c.title }), meta);
   el.dataset.id = c.id;
+  el.dataset.act = "open";
   if (c.column !== "done" && c.column !== "verify") {
     const b = h("button", { type: "button", className: "copy-card", title: c.column === "todo" || c.column === "in-progress" ? "Copy prompt for an agent" : "Copy investigate prompt (card not approved)", ariaLabel: `Copy prompt for card ${c.id}` }, copyIcon());
     b.onclick = (e) => { e.stopPropagation(); copyPrompt(c); };
     b.onkeydown = (e) => e.stopPropagation();
+    b.dataset.act = "copy";
     el.classList.add("has-copy");
     el.append(b);
   }
   el.onclick = () => openCard(c.id);
   el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openCard(c.id); } };
-  el.ondragstart = (e) => { e.dataTransfer.setData("text/plain", String(c.id)); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); };
-  el.ondragend = () => { el.classList.remove("dragging"); clearDrop(); };
+  el.ondragstart = (e) => { e.dataTransfer.setData("text/plain", String(c.id)); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); dragging = true; };
+  el.ondragend = () => { el.classList.remove("dragging"); clearDrop(); dragging = false; if (renderPending) { renderPending = false; render(); } };
   return el;
 }
 
@@ -494,6 +531,7 @@ function openCard(id) {
   const c = cards.find((x) => x.id === id);
   if (!c) return;
   openId = id;
+  openerId = id;
   $("#dlgTitle").textContent = `Card #${id}`;
   for (const k of ["title", "column", "type", "taskId", "phase", "lane", "description", "verifyNotes", "howToVerify"]) form[k].value = c[k];
   form.needsYou.checked = c.needsYou;
@@ -596,7 +634,10 @@ $("#del").onclick = async () => {
   if (openId === null || !confirm(`Delete card #${openId}? This removes its file.`)) return;
   try { await api(`/api/cards/${openId}`, "DELETE"); dlg.close(); await load(); } catch (e) { $("#formMsg").textContent = e.message; }
 };
-dlg.onclose = () => { openId = null; };
+dlg.onclose = () => {
+  openId = null;
+  if (!$("#board").contains(document.activeElement)) focusCard(openerId, "open");
+};
 dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
 
 async function onPaste(e) {
