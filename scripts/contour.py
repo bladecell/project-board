@@ -54,6 +54,11 @@ d = []
 for n in range(1, LEVELS):
   d += [smooth(c) for c in chains(segs(lerp(lo, hi, n / LEVELS)))]
 path = "".join(d)
-for name, bg, stroke, op in (("light", "#f8fafc", "#94a3b8", .45), ("dark", "#0f172a", "#64748b", .35)):
+for name, bg1, bg2, s1, s2, op in (
+    ("light", "#f8fafc", "#dbe4f2", "#94a3b8", "#7c8fd0", .45),
+    ("dark", "#0b1224", "#1d2748", "#64748b", "#7f8de0", .38)):
   open(f"public/contour-{name}.svg", "w").write(
-    f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid slice"><rect width="{W}" height="{H}" fill="{bg}"/><path d="{path}" fill="none" stroke="{stroke}" stroke-opacity="{op}" stroke-width="1.3" stroke-linecap="round"/></svg>')
+    f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid slice"><defs>'
+    f'<linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{bg1}"/><stop offset="1" stop-color="{bg2}"/></linearGradient>'
+    f'<linearGradient id="s" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="{W}" y2="{H}"><stop offset="0" stop-color="{s1}"/><stop offset="1" stop-color="{s2}"/></linearGradient></defs>'
+    f'<rect width="{W}" height="{H}" fill="url(#b)"/><path d="{path}" fill="none" stroke="url(#s)" stroke-opacity="{op}" stroke-width="1.3" stroke-linecap="round"/></svg>')
