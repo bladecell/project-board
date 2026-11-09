@@ -68,6 +68,7 @@ export function startServer(dir: string, port: number, name: string) {
     const m = req.method;
 
     if (m === "GET" && p === "/") return new Response(Bun.file(join(import.meta.dir, "public/index.html")), { headers: { ...security, "content-type": "text/html; charset=utf-8" } });
+    if (m === "GET" && p === "/prompt.js") return new Response(Bun.file(join(import.meta.dir, "public/prompt.js")), { headers: { ...security, "content-type": "text/javascript; charset=utf-8" } });
     if (m === "GET" && p === "/markdown.js") return new Response(Bun.file(join(import.meta.dir, "public/markdown.js")), { headers: { ...security, "content-type": "text/javascript; charset=utf-8" } });
     const bg = m === "GET" && p.match(/^\/contour-(light|dark)\.svg$/);
     if (bg) return new Response(Bun.file(join(import.meta.dir, `public/contour-${bg[1]}.svg`)), { headers: { ...security, "content-type": "image/svg+xml", "cache-control": "max-age=86400" } });

@@ -8,6 +8,7 @@ import {
 import { getCommits, linkCommits } from "./commits";
 import { startServer } from "./server";
 import { runStdio } from "./mcp";
+import { buildPrompt } from "./public/prompt.js";
 import { installMcp, onPath } from "./installmcp";
 
 const usage = `board                      start the web board in this project and open the browser
@@ -23,6 +24,7 @@ board mcp                  stdio MCP server for agents (Claude Code, opencode, .
 board mcp-config [claude|opencode|opencode-v1]  print the JSON to paste into .mcp.json or opencode.json
 board install-mcp [claude|opencode] [--hooks] [--shared] [--dry-run] [--opencode-v1]
                            merge the board MCP server into the project's agent config (explicit opt-in)
+board prompt <id>          print a ready instruction to paste into an agent session
 board subtasks <id>         turn plain list items in the description into - [ ] subtasks
 options: --dir <project root> (default cwd), --port <n> (default 4747), --no-open
 columns: ${columns.join(", ")}`;
@@ -109,6 +111,10 @@ async function serve() {
 try {
   if (values.help || cmd === "help") console.log(usage);
   else if (cmd === "touch") await touch();
+  else if (cmd === "prompt") {
+    const id = cardId(args[0]);
+    console.log(buildPrompt(loadCards(need()).find((x) => x.id === id) ?? fail(`no card ${id}`)));
+  }
   else if (cmd === "mcp") await runStdio(root);
   else if (cmd === "install-mcp") {
     const target = args[0] ?? "claude";

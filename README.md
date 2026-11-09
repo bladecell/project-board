@@ -57,6 +57,10 @@ To keep the heartbeat fresh, add this to your Claude Code `settings.json` (user 
 
 Start the card with `--session` set to the session id (or export `CLAUDE_SESSION_ID`), otherwise the label `claude` never matches a hook's `session_id`. `board init` refreshes the Board workflow block in CLAUDE.md between its markers, so older projects pick up the `start`/`stop` lines by running it again.
 
+## Copy prompt
+
+"Copy prompt" in the card panel, and a small copy button on todo and in-progress cards, puts a ready instruction on the clipboard for an agent session (card id and title only, never the card text; the agent reads the card through `board_show`). Without clipboard access a box opens to copy from. `board prompt <id>` prints the same text. The builder is `public/prompt.js`.
+
 ## MCP server (Claude Code, opencode, others)
 
 `board mcp` is a stdio MCP server (newline-delimited JSON-RPC, no dependencies, tools only). Agents start it with the project as cwd; `--dir <root>` overrides.

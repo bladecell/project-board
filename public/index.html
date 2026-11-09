@@ -96,6 +96,17 @@ header select { width: auto; min-width: 130px; }
 .pill.decision { background: var(--t-decision-bg); color: var(--t-decision); }
 .ref { font-variant-numeric: tabular-nums; }
 .chip { padding: 0 6px; line-height: 16px; background: var(--line-soft); border-radius: 4px; max-width: 100%; overflow-wrap: anywhere; }
+.card { position: relative; }
+.copy-card { position: absolute; top: 0; right: 0; width: 44px; height: 44px; min-height: 44px; padding: 0; display: grid; place-items: center; background: transparent; color: var(--muted); opacity: 0; }
+.card:hover .copy-card, .card:focus-within .copy-card, .copy-card:focus-visible { opacity: 1; }
+@media (hover: none) { .copy-card { opacity: 1; } }
+.copy-card svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.card.has-copy .title { padding-right: 28px; }
+#toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 10; padding: 8px 14px; border-radius: 8px; background: var(--text); color: var(--bg, var(--card)); font-size: 13px; opacity: 0; pointer-events: none; }
+#toast.show { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) { #toast { transition: opacity .15s; } }
+#promptDlg { width: min(560px, 100vw - 24px); padding: 16px; }
+#promptDlg textarea { width: 100%; box-sizing: border-box; resize: vertical; margin: 8px 0; }
 .agent { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; line-height: 18px; padding: 0 6px; border-radius: 4px; background: var(--line-soft); color: var(--muted); }
 .agent .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .55; flex: none; }
 .agent.live { color: var(--accent); font-weight: 600; }
@@ -191,6 +202,8 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
   </div>
 </header>
 <div id="banner" role="alert" hidden></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<dialog id="promptDlg" aria-label="Prompt to copy"><form method="dialog"><p class="hint">Copy this with Ctrl+C, then paste it into your agent.</p><textarea id="promptText" readonly rows="6"></textarea><div class="actions"><button type="submit" class="primary">Close</button></div></form></dialog>
 <main id="board" aria-label="Kanban board"><p class="empty">Loading board</p></main>
 
 <dialog id="dlg" aria-labelledby="dlgTitle">
@@ -234,7 +247,7 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
     </section>
     <p class="hint" id="formMsg" role="status"></p>
     <div class="actions">
-      <button type="button" class="danger" id="del">Delete card</button>
+      <div><button type="button" id="copyPrompt">Copy prompt</button><button type="button" class="danger" id="del">Delete card</button></div>
       <div><button type="button" id="close">Close</button><button type="submit" class="primary">Save card</button></div>
     </div>
   </form>
@@ -242,6 +255,7 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 
 <script type="module">
 import { countTasks, listToTasks, renderMarkdown, toggleTask } from "/markdown.js";
+import { buildPrompt } from "/prompt.js";
 const labels = { inbox: "Inbox", planned: "Planned", todo: "Todo", "in-progress": "In progress", verify: "Verify", done: "Done" };
 const typeList = ["bug", "feature", "task", "decision"];
 const $ = (s) => document.querySelector(s);
@@ -352,6 +366,27 @@ function agentChip(c) {
     h("span", { className: "dot", ariaHidden: "true" }), h("span", { textContent: live ? "Claude working" : `Claude idle ${ago}`.trim() }));
 }
 
+let toastT;
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove("show"), 1800);
+}
+async function copyPrompt(c) {
+  const text = buildPrompt(c);
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Prompt copied");
+  } catch {
+    $("#promptText").value = text;
+    $("#promptDlg").showModal();
+    $("#promptText").select();
+  }
+}
+const copyIcon = () => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("aria-hidden", "true"); s.innerHTML = '<rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 10.5V4a1 1 0 0 1 1-1h6.5"/>'; return s; };
+
 function cardEl(c) {
   const showPhase = c.phase && c.phase.toLowerCase() !== "backlog";
   const ref = [`#${c.id}`, c.taskId].filter(Boolean).join(" · ");
@@ -364,6 +399,13 @@ function cardEl(c) {
   const el = h("article", { className: "card", draggable: true, tabIndex: 0, role: "button", ariaLabel: `Open card ${c.id}: ${c.title}` },
     h("span", { className: "title", textContent: c.title }), meta);
   el.dataset.id = c.id;
+  if (c.column === "todo" || c.column === "in-progress") {
+    const b = h("button", { type: "button", className: "copy-card", title: "Copy prompt for an agent", ariaLabel: `Copy prompt for card ${c.id}` }, copyIcon());
+    b.onclick = (e) => { e.stopPropagation(); copyPrompt(c); };
+    b.onkeydown = (e) => e.stopPropagation();
+    el.classList.add("has-copy");
+    el.append(b);
+  }
   el.onclick = () => openCard(c.id);
   el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openCard(c.id); } };
   el.ondragstart = (e) => { e.dataTransfer.setData("text/plain", String(c.id)); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); };
@@ -534,6 +576,7 @@ async function onPaste(e) {
 for (const k of ["description", "verifyNotes"]) form[k].addEventListener("paste", onPaste);
 
 $("#search").oninput = (e) => { q = e.target.value.trim().toLowerCase(); render(); };
+$("#copyPrompt").onclick = () => { const c = cards.find((x) => x.id === openId); if (c) copyPrompt(c); };
 $("#type").onchange = (e) => { typeF = e.target.value; store.set("board.type", typeF); render(); };
 $("#needs").onclick = () => { needsOnly = !needsOnly; render(); };
 $("#phase").onchange = (e) => { phase = e.target.value; store.set("board.phase", phase); render(); };

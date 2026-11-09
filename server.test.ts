@@ -142,3 +142,9 @@ describe("agent fields", () => {
     expect((await put.json()).agent).toBe("sess1234");
   });
 });
+
+test("serves prompt.js", async () => {
+  const r = await fetch(`${base}/prompt.js`);
+  expect(r.status).toBe(200);
+  expect(await r.text()).toContain("buildPrompt");
+});

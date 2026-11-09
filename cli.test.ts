@@ -113,3 +113,9 @@ describe("install-mcp command", () => {
     expect(bad.code).toBe(1);
   });
 });
+
+test("prompt prints the instruction for a card", () => {
+  const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, "prompt", "1"]);
+  expect(r.stdout.toString()).toMatch(/^Work on board card #1: ".*"\. Read it with the board_show/);
+  expect(Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, "prompt", "999"]).exitCode).toBe(1);
+});
