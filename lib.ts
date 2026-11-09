@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, appendFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { countTasks, listToTasks } from "./public/markdown.js";
 
 export const columns = ["inbox", "planned", "todo", "in-progress", "verify", "done"] as const;
 export const types = ["bug", "feature", "task", "decision"] as const;
@@ -181,6 +182,13 @@ export function applyPatch(c: Card, p: Record<string, unknown>): Card {
 
 const material = ["column", "type", "taskId", "phase", "lane", "needsYou", "blocked", "title", "description", "verifyNotes", "howToVerify"] as const;
 const none = (v: string) => v || "(none)";
+// ticking a checkbox is not a notes edit: compare with every task mark normalised
+const untick = (s: string) => s.replace(/^([ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+)\[[xX]\]/gm, "$1[ ]");
+
+export function taskCounts(c: Pick<Card, "description" | "howToVerify">) {
+  const a = countTasks(c.description), b = countTasks(c.howToVerify);
+  return { tasksDone: a.done + b.done, tasksTotal: a.total + b.total };
+}
 
 function diffEvents(a: Card, b: Card): string[] {
   const ev: string[] = [];
@@ -192,17 +200,17 @@ function diffEvents(a: Card, b: Card): string[] {
   for (const k of ["title", "phase", "taskId", "lane"] as const) {
     if (a[k] !== b[k]) ev.push(`${k} ${none(a[k])} → ${none(b[k])}`);
   }
-  if (a.verifyNotes !== b.verifyNotes) ev.push("verify notes updated");
+  if (untick(a.verifyNotes) !== untick(b.verifyNotes)) ev.push("verify notes updated");
   return ev;
 }
 
 // Single place that owns created/updated/history. Returns `next` itself when nothing real changed.
-export function stamp(old: Card | null, next: Card, ctx: Ctx): Card {
+export function stamp(old: Card | null, next: Card, ctx: Ctx, extra: string[] = []): Card {
   const at = iso(ctx.now ?? new Date());
   const entry = (text: string): HistoryEntry => ({ at, text: cut(oneLine(text)), by: ctx.by });
   if (!old) return { ...next, created: at, updated: at, history: [entry("created")] };
   if (!material.some((k) => old[k] !== next[k])) return next;
-  const history = [...old.history, ...diffEvents(old, next).map(entry)].slice(-maxHistory);
+  const history = [...old.history, ...[...diffEvents(old, next), ...extra].map(entry)].slice(-maxHistory);
   return { ...next, created: old.created || at, updated: at, history };
 }
 
@@ -278,6 +286,15 @@ export function moveCard(dir: string, id: number, column: Column, beforeId: numb
   const out = stamp(old, moved, ctx);
   for (const c of changed) if (c.id !== id) writeCard(dir, c);
   if (out !== moved || moved.order !== old.order) writeCard(dir, out);
+  return out;
+}
+
+export function convertSubtasks(dir: string, id: number, ctx: Ctx): Card {
+  const old = loadCards(dir).find((c) => c.id === id);
+  if (!old) throw new Error(`no card ${id}`);
+  const next = { ...old, description: listToTasks(old.description) };
+  const out = stamp(old, next, ctx, ["converted list to subtasks"]);
+  if (out !== next) writeCard(dir, out);
   return out;
 }
 

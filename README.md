@@ -17,11 +17,12 @@ board add "title" --type bug --task P2.3 --phase P2 --lane fw --needs-you [--col
 board move 7 verify --notes "ran tests, all green"
 board list [column]             # one line per card; done is hidden unless named
 board show 7
+board subtasks 7                # plain list items in the description become - [ ] subtasks (idempotent)
 ```
 
 `board show` also lists the git commits linked to a card. Links are computed live from `git log` (last 2000 commits, nothing stored in the card): a commit subject containing the card's `taskId` or `#<id>` as a whole token (`P2.3` does not match `P2.30` or `P2.3b`). No git repo means no commits. The web UI shows a commit count on the card and the list in the card panel (`GET /api/cards/:id` returns `commits`; the list endpoint returns `commitCount`).
 
-Card text renders as markdown in the card panel (headings, lists, task checkboxes, code, quotes, links, `images/` images; raw HTML is never rendered, only http/https/mailto links). Edit switches a field to its textarea. The renderer is `public/markdown.js`.
+Card text renders as markdown in the card panel (headings, lists, task checkboxes, code, quotes, links, `images/` images; raw HTML is never rendered, only http/https/mailto links). Edit switches a field to its textarea. `- [ ]` / `- [x]` items are tick boxes in all three fields; ticking writes the exact source line and only bumps `updated`. Cards show a `done/total` chip (description plus how to verify), and "Lists → subtasks" in the card panel converts a plain list. The renderer is `public/markdown.js`.
 
 Options: `--dir <project root>` (default cwd), `--port <n>`, `--no-open`.
 The server binds 127.0.0.1 only. Drag cards between columns, paste screenshots into a card body, edit everything in the detail panel. The board reloads when files change. Drag and drop needs a mouse; on touch use the Column field in the card panel.

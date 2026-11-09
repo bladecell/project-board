@@ -112,7 +112,7 @@ function listLine(l) {
   let indent = 0, i = 0;
   while (i < l.length && i < 64 && (l[i] === " " || l[i] === "\t")) { indent += l[i] === "\t" ? 4 : 1; i++; }
   const m = /^([-*+]|\d{1,9}[.)])[ \t]+(.*)$/.exec(l.slice(i));
-  return m ? { indent, ordered: /\d/.test(m[1][0]), body: m[2], at: i + m[0].length - m[2].length } : null;
+  return m ? { indent, ordered: /\d/.test(m[1][0]), body: m[2], at: i + m[0].length - m[2].length, markerAt: i } : null;
 }
 const taskBody = (body) => {
   const m = /^\[( |x|X)\](?:[ \t]+(.*))?$/.exec(body);
@@ -131,10 +131,10 @@ function renderList(items, pos, depth, ctr) {
     const task = taskBody(it.body);
     let inner;
     if (task) {
-      const attrs = ctr ? `data-task="${ctr.n++}"` : "disabled";
-      inner = `<input type="checkbox" ${attrs}${task.checked ? " checked" : ""} aria-label="Task"><span>${inline(task.text + it.more, 0, false)}</span>`;
+      const attrs = ctr ? `data-task="${it.line}"` : "disabled";
+      inner = `<label><input type="checkbox" ${attrs}${task.checked ? " checked" : ""} aria-label="Task"><span>${inline(task.text + it.more, 0, false)}</span></label>`;
     } else inner = inline(it.body + it.more, 0, false);
-    html += `<li${task ? ' class="task"' : ""}>${inner}`;
+    html += `<li${task ? ` class="task${task.checked ? " done" : ""}"` : ""}>${inner}`;
     while (pos.i < items.length && items[pos.i].indent > base && depth < MAX_DEPTH) html += renderList(items, pos, depth + 1, ctr);
     html += "</li>";
   }
@@ -169,7 +169,7 @@ function blocks(lines, depth, ctr) {
       while (i < lines.length) {
         const cur = lines[i];
         const ll = isHr(cur) ? null : listLine(cur);
-        if (ll) { items.push({ ...ll, more: "" }); i++; continue; }
+        if (ll) { items.push({ ...ll, more: "", line: i }); i++; continue; }
         if (isBlank(cur)) {
           let j = i;
           while (j < lines.length && isBlank(lines[j])) j++;
@@ -195,25 +195,49 @@ export function renderMarkdown(src) {
   const full = typeof src === "string" ? src : "";
   const text = full.slice(0, MAX_CHARS).replace(/\r\n?/g, "\n");
   const note = full.length > MAX_CHARS ? `<p>(truncated at ${MAX_CHARS} characters)</p>` : "";
-  return `<div class="md">${blocks(text.split("\n"), 0, { n: 0 })}${note}</div>`;
+  return `<div class="md">${blocks(text.split("\n"), 0, {})}${note}</div>`;
 }
 
-// Flip the nth task checkbox in the source text. Same scan as the renderer: skips code fences
-// and quotes, so data-task indexes always line up.
-export function toggleTask(src, index, on) {
-  const lines = String(src ?? "").split("\n");
-  let n = 0, inFence = false;
-  for (let k = 0; k < lines.length; k++) {
-    const l = lines[k];
+// Line-based task helpers. They share one scan with the renderer's rules: code fences, quotes and
+// rules are skipped, so a rendered checkbox's data-task (its source line index) always points at a
+// real task line. Line separators (\n, \r\n, \r) are kept as they were.
+const splitLines = (src) => String(src ?? "").split(/(\r\n|\r|\n)/);
+
+function scanItems(parts, visit) {
+  let inFence = false;
+  for (let k = 0; k < parts.length; k += 2) {
+    const l = parts[k];
     if (inFence) { if (fenceClose.test(l)) inFence = false; continue; }
     if (fenceOpen.test(l)) { inFence = true; continue; }
     if (isQuote(l) || isHr(l)) continue;
     const ll = listLine(l);
-    if (!ll || !taskBody(ll.body)) continue;
-    if (n++ === index) {
-      lines[k] = `${l.slice(0, ll.at + 1)}${on ? "x" : " "}${l.slice(ll.at + 2)}`;
-      break;
-    }
+    if (ll) visit(k, ll);
   }
-  return lines.join("\n");
+}
+
+export function countTasks(src) {
+  const c = { done: 0, total: 0 };
+  scanItems(splitLines(src), (_k, ll) => {
+    const t = taskBody(ll.body);
+    if (t) { c.total++; if (t.checked) c.done++; }
+  });
+  return c;
+}
+
+// Flip the task checkbox on source line `line` (0-based).
+export function toggleTask(src, line, on) {
+  const parts = splitLines(src);
+  scanItems(parts, (k, ll) => {
+    if (k / 2 === line && taskBody(ll.body)) parts[k] = `${parts[k].slice(0, ll.at + 1)}${on ? "x" : " "}${parts[k].slice(ll.at + 2)}`;
+  });
+  return parts.join("");
+}
+
+// Plain list items (bullets or numbers) become unchecked tasks; item text is kept as written.
+export function listToTasks(src) {
+  const parts = splitLines(src);
+  scanItems(parts, (k, ll) => {
+    if (ll.body.trim() && !taskBody(ll.body)) parts[k] = `${parts[k].slice(0, ll.markerAt)}- [ ] ${ll.body}`;
+  });
+  return parts.join("");
 }

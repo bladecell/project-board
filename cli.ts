@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 import { basename, join, resolve } from "node:path";
 import {
-  boardDir, boardRel, columns, createCard, hasBoard, initBoard, loadCards, moveCard, serializeCard, sortCards, types,
+  boardDir, boardRel, columns, convertSubtasks, createCard, hasBoard, initBoard, loadCards, moveCard, serializeCard, sortCards, types,
   type Card,
 } from "./lib";
 import { getCommits, linkCommits } from "./commits";
@@ -14,6 +14,7 @@ board add "title" [--type bug|feature|task|decision] [--column inbox] [--task P2
 board move <id> <column> [--notes "what ran + result"]
 board list [column]        one line per card (done is hidden unless asked for)
 board show <id>
+board subtasks <id>         turn plain list items in the description into - [ ] subtasks
 options: --dir <project root> (default cwd), --port <n> (default 4747), --no-open
 columns: ${columns.join(", ")}`;
 
@@ -86,6 +87,12 @@ try {
     const col = args[0] ? column(args[0]) : null;
     const cards = sortCards(loadCards(need())).filter((c) => (col ? c.column === col : c.column !== "done"));
     console.log(cards.length ? cards.map(line).join("\n") : "(no cards)");
+  } else if (cmd === "subtasks") {
+    const dir = need();
+    const id = cardId(args[0]);
+    const before = loadCards(dir).find((x) => x.id === id) ?? fail(`no card ${id}`);
+    const after = convertSubtasks(dir, id, { by: "cli" });
+    console.log(after === before || after.description === before.description ? `${line(after)}\nnothing to convert` : `${line(after)}\nconverted list items to subtasks`);
   } else if (cmd === "show") {
     const dir = need();
     const id = cardId(args[0]);

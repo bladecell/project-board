@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { renderMarkdown as md, toggleTask } from "./public/markdown.js";
+import { countTasks, listToTasks, renderMarkdown as md, toggleTask } from "./public/markdown.js";
 
 // Inert means: only allowed elements, only allowed attribute names, and URL attributes limited to safe targets.
-const allowedTags = new Set(["p", "br", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "em", "code", "pre", "ul", "ol", "li", "blockquote", "hr", "a", "img", "input", "span", "div"]);
+const allowedTags = new Set(["p", "br", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "em", "code", "pre", "ul", "ol", "li", "blockquote", "hr", "a", "img", "input", "span", "div", "label"]);
 const allowedAttrs = ["href", "src", "alt", "target", "rel", "class", "type", "data-task", "aria-label"];
 function assertInert(html: string) {
   for (const m of html.matchAll(/<\/?([a-zA-Z0-9]+)((?:\s+[a-zA-Z-]+(?:="[^"]*")?)*)\s*>/g)) {
@@ -105,28 +105,76 @@ describe("inline", () => {
 });
 
 describe("tasks", () => {
-  test("renders checkboxes with stable indexes, toggleTask edits the nth", () => {
+  test("renders label-wrapped checkboxes keyed by source line, done items get a class", () => {
     const t = "- [ ] one\n- [x] two\ntext\n- [ ] three";
     const out = md(t);
-    expect(out).toContain('<input type="checkbox" data-task="0" aria-label="Task">');
-    expect(out).toContain('<input type="checkbox" data-task="1" checked aria-label="Task">');
-    expect(out).toContain('data-task="2"');
-    expect(toggleTask(t, 0, true)).toBe("- [x] one\n- [x] two\ntext\n- [ ] three");
-    expect(toggleTask(t, 1, false)).toBe("- [ ] one\n- [ ] two\ntext\n- [ ] three");
-    expect(toggleTask(t, 2, true).endsWith("- [x] three")).toBe(true);
+    expect(out).toContain('<li class="task"><label><input type="checkbox" data-task="0" aria-label="Task"><span>one</span></label></li>');
+    expect(out).toContain('<li class="task done"><label><input type="checkbox" data-task="1" checked aria-label="Task"><span>two</span></label></li>');
+    expect(out).toContain('data-task="3"');
   });
-  test("tasks inside code fences and quotes are not counted", () => {
+  test("toggleTask edits exactly the given line, even with identical text", () => {
+    const t = "- [ ] same\n- [ ] same\n- [ ] same";
+    expect(toggleTask(t, 1, true)).toBe("- [ ] same\n- [x] same\n- [ ] same");
+    expect(toggleTask("- [ ] same\n- [x] same", 1, false)).toBe("- [ ] same\n- [ ] same");
+  });
+  test("rendered data-task and toggleTask agree for every checkbox", () => {
+    const t = "# T\n\n- [ ] a\n  - [ ] b\n\n1. [x] c\n```\n- [ ] fake\n```\n- [ ] d";
+    const lines = t.split("\n");
+    for (const m of md(t).matchAll(/data-task="(\d+)"/g)) expect(lines[Number(m[1])]).toMatch(/\[[ x]\]/);
+    expect([...md(t).matchAll(/data-task="(\d+)"/g)].map((m) => Number(m[1]))).toEqual([2, 3, 5, 9]);
+  });
+  test("code fences are never tickable or counted", () => {
     const t = "```\n- [ ] fake\n```\n> - [ ] quoted\n- [ ] real";
     const out = md(t);
-    expect(out).toContain('data-task="0"');
-    expect(out).not.toContain('data-task="1"');
-    expect(toggleTask(t, 0, true)).toBe("```\n- [ ] fake\n```\n> - [ ] quoted\n- [x] real");
+    expect(out).toContain('data-task="4"');
+    expect(out.match(/data-task/g)).toHaveLength(1);
+    expect(toggleTask(t, 1, true)).toBe(t);
+    expect(toggleTask(t, 3, true)).toBe(t);
+    expect(toggleTask(t, 4, true)).toBe("```\n- [ ] fake\n```\n> - [ ] quoted\n- [x] real");
+    expect(countTasks(t)).toEqual({ done: 0, total: 1 });
   });
-  test("toggleTask out of range is a no-op", () => {
+  test("CRLF and lone CR text keeps its separators and line numbering", () => {
+    const t = "intro\r\n- [ ] a\r\n- [ ] b\r\n";
+    expect(toggleTask(t, 2, true)).toBe("intro\r\n- [ ] a\r\n- [x] b\r\n");
+    expect(md(t)).toContain('data-task="1"');
+    expect(countTasks(t)).toEqual({ done: 0, total: 2 });
+    expect(toggleTask("a\r- [ ] x", 1, true)).toBe("a\r- [x] x");
+  });
+  test("toggleTask on a non-task or out-of-range line is a no-op", () => {
+    expect(toggleTask("- [ ] a\nplain", 1, true)).toBe("- [ ] a\nplain");
     expect(toggleTask("- [ ] a", 5, true)).toBe("- [ ] a");
+    expect(toggleTask("- plain", 0, true)).toBe("- plain");
   });
   test("task text is rendered inline", () => {
     expect(md("- [ ] run `ci`")).toContain("<code>ci</code>");
+  });
+  test("countTasks", () => {
+    expect(countTasks("")).toEqual({ done: 0, total: 0 });
+    expect(countTasks("- [x] a\n- [ ] b\n  - [X] c\n1. [ ] d\n- plain\n- [x]nospace")).toEqual({ done: 2, total: 4 });
+  });
+});
+
+describe("listToTasks", () => {
+  test("converts bullets, numbers and nesting, keeps item text", () => {
+    expect(listToTasks("- a\n* b\n+ c\n1. d\n2) e\n  - nested\n    1. deep")).toBe(
+      "- [ ] a\n- [ ] b\n- [ ] c\n- [ ] d\n- [ ] e\n  - [ ] nested\n    - [ ] deep");
+    expect(listToTasks("- 1. Header: x\n- 2. Tabs: y")).toBe("- [ ] 1. Header: x\n- [ ] 2. Tabs: y");
+  });
+  test("leaves tasks, fences, headings, paragraphs, quotes and rules alone", () => {
+    const t = "# H\nparagraph - not a list\n```\n- code\n```\n> - quoted\n---\n* * *\n- [x] done\n- [ ] todo\n-\n- ";
+    expect(listToTasks(t)).toBe(t);
+  });
+  test("mixed text converts only the plain items", () => {
+    expect(listToTasks("intro\n\n- a\n- [x] b\n\n```\n- c\n```\n- d")).toBe("intro\n\n- [ ] a\n- [x] b\n\n```\n- c\n```\n- [ ] d");
+  });
+  test("idempotent, and preserves CRLF", () => {
+    const t = "- a\r\n  1. b\r\n";
+    const once = listToTasks(t);
+    expect(once).toBe("- [ ] a\r\n  - [ ] b\r\n");
+    expect(listToTasks(once)).toBe(once);
+  });
+  test("non-string input", () => {
+    expect(listToTasks(undefined as never)).toBe("");
   });
 });
 

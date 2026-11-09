@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, utimesSync, readFileSync, readdirSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  appendNotes, parseHistoryLine, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
+  appendNotes, convertSubtasks, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
   placeCard, serializeCard, slugify, updateCard, type Card,
 } from "./lib";
 
@@ -346,5 +346,41 @@ describe("timestamps and history", () => {
     const u = updateCard(dir, 1, { lane: "z", updated: "1999-01-01T00:00:00Z", history: [] }, { by: "ui", now: t1 });
     expect(u.updated).toBe("2026-11-10T08:00:00Z");
     expect(u.history).toHaveLength(2);
+  });
+});
+
+describe("tasks in cards", () => {
+  const setup = () => { initBoard(root); return boardDir(root); };
+  const get = (dir: string) => loadCards(dir)[0];
+
+  test("taskCounts spans description and howToVerify, not verifyNotes", () => {
+    expect(taskCounts(card({ description: "- [x] a\n- [ ] b", howToVerify: "- [ ] c", verifyNotes: "- [ ] ignored" }))).toEqual({ tasksDone: 1, tasksTotal: 3 });
+    expect(taskCounts(card({}))).toEqual({ tasksDone: 0, tasksTotal: 0 });
+  });
+
+  test("ticking in any field only bumps updated, no history event", () => {
+    const dir = setup();
+    const t0 = new Date("2026-11-09T21:40:12Z");
+    createCard(dir, { title: "a", description: "- [ ] d", verifyNotes: "- [ ] v", howToVerify: "- [ ] h" }, { by: "ui", now: t0 });
+    const c = updateCard(dir, 1, { description: "- [x] d", verifyNotes: "- [x] v", howToVerify: "- [x] h" }, { by: "ui", now: new Date("2026-11-10T08:00:00Z") });
+    expect(c.history.map((h) => h.text)).toEqual(["created"]);
+    expect(c.updated).toBe("2026-11-10T08:00:00Z");
+    const edited = updateCard(dir, 1, { verifyNotes: "- [x] v\n- [ ] new" }, { by: "ui", now: t0 });
+    expect(edited.history.at(-1)!.text).toBe("verify notes updated");
+  });
+
+  test("convertSubtasks rewrites the description once, logs a cli event, then is a no-op", () => {
+    const dir = setup();
+    createCard(dir, { title: "a", description: "intro\n- 1. Header\n- 2. Tabs\n```\n- code\n```" }, { by: "ui", now: new Date("2026-11-09T21:40:12Z") });
+    const first = convertSubtasks(dir, 1, { by: "cli", now: new Date("2026-11-10T08:00:00Z") });
+    expect(first.description).toBe("intro\n- [ ] 1. Header\n- [ ] 2. Tabs\n```\n- code\n```");
+    expect(first.history.at(-1)).toEqual({ at: "2026-11-10T08:00:00Z", text: "converted list to subtasks", by: "cli" });
+    const file = join(dir, "cards", "0001-a.md");
+    const before = readFileSync(file, "utf8");
+    const second = convertSubtasks(dir, 1, { by: "cli", now: new Date("2026-11-11T08:00:00Z") });
+    expect(second.history).toHaveLength(2);
+    expect(readFileSync(file, "utf8")).toBe(before);
+    expect(get(dir).description).toBe(first.description);
+    expect(() => convertSubtasks(dir, 9, { by: "cli" })).toThrow();
   });
 });

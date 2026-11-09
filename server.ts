@@ -1,7 +1,7 @@
 import { mkdirSync, watch } from "node:fs";
 import { join } from "node:path";
 import { getCommits, linkCommits } from "./commits";
-import { atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
+import { taskCounts, atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
 
 const ui = { by: "ui" } as const;
 const maxJson = 1_000_000;
@@ -15,7 +15,7 @@ class HttpError extends Error {
 }
 
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: security });
-const publicCard = ({ file, ...c }: Card) => c;
+const publicCard = ({ file, ...c }: Card) => ({ ...c, ...taskCounts(c) });
 const maxCardCommits = 50;
 
 async function readBody(req: Request, max: number) {

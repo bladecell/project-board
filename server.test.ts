@@ -113,4 +113,15 @@ describe("commit links", () => {
     const d = await (await fetch(`${base}/api/cards/${made.id}`)).json();
     expect(d).toMatchObject({ commitCount: 0, commits: [] });
   });
+
+  test("cards expose tasksDone and tasksTotal, computed not stored", async () => {
+    const c = await (await post("/api/cards", JSON.stringify({ title: "t", description: "- [x] a\n- [ ] b", howToVerify: "- [ ] c", verifyNotes: "- [ ] z" }))).json();
+    expect(c).toMatchObject({ tasksDone: 1, tasksTotal: 3 });
+    const list = await (await fetch(`${base}/api/cards`)).json();
+    expect(list.find((x: { id: number }) => x.id === c.id)).toMatchObject({ tasksDone: 1, tasksTotal: 3 });
+    const put = await fetch(`${base}/api/cards/${c.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ description: "- [x] a\n- [x] b" }) });
+    const u = await put.json();
+    expect(u).toMatchObject({ tasksDone: 2, tasksTotal: 3 });
+    expect(u.history).toHaveLength(1);
+  });
 });
