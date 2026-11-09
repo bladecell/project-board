@@ -38,7 +38,9 @@
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg) var(--wall) center / cover fixed no-repeat; color: var(--text); font: 15px/1.45 var(--sans); height: 100dvh; display: flex; flex-direction: column; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--sans); height: 100dvh; display: flex; flex-direction: column; }
+/* The wallpaper is its own fixed layer: scrolling never repaints a background-attachment: fixed body. */
+body::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--wall) center / cover no-repeat; pointer-events: none; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button, select, input:not([type=checkbox]) { min-height: 44px; }
@@ -65,7 +67,7 @@ header select { width: auto; min-width: 130px; }
 #banner[hidden] { display: none; }
 
 #board { scroll-padding-inline: 16px; flex: 1; min-height: 0; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; scroll-snap-type: x proximity; }
-.column { flex: 0 0 292px; max-width: 86vw; background: var(--tint); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; max-height: 100%; }
+.column { flex: 0 0 292px; max-width: 86vw; background: var(--col-fill, var(--tint)); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; max-height: 100%; }
 .column[data-col="inbox"] { --tint: rgb(203 213 225 / .5); }
 .column[data-col="planned"] { --tint: rgb(203 216 236 / .5); }
 .column[data-col="todo"] { --tint: rgb(236 226 190 / .5); }
@@ -110,7 +112,7 @@ header select { width: auto; min-width: 130px; }
 .card-act svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 @media (hover: none) { .card-acts { opacity: 1; background: none; } .card-act { width: 44px; height: 44px; min-height: 44px; } .card-open { padding-right: 88px; } }
 /* Glass: the Move popover, a floating layer above the board. Items are flat. */
-#movePop { margin: 0; inset: auto; min-width: 208px; max-width: calc(100vw - 16px); padding: 6px; border: 1px solid var(--g-border); border-radius: 16px; background: color-mix(in srgb, var(--g-solid) 92%, transparent); color: var(--g-text); box-shadow: var(--g-shadow); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); --focus: var(--g-primary); }
+#movePop { margin: 0; inset: auto; min-width: 208px; max-width: calc(100vw - 16px); padding: 6px; border: 1px solid var(--g-border); border-radius: 16px; background: var(--pop, color-mix(in srgb, var(--g-solid) 92%, transparent)); color: var(--g-text); box-shadow: var(--g-shadow); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); --focus: var(--g-primary); }
 @supports not (backdrop-filter: blur(1px)) { #movePop { background: var(--g-solid); } }
 #movePop p { margin: 0; padding: 6px 10px 4px; font-size: 12px; font-weight: 600; color: var(--g-muted); }
 #movePop ul { list-style: none; margin: 0; padding: 0; }
@@ -144,6 +146,17 @@ header select { width: auto; min-width: 130px; }
 .composer-actions select { flex: 1 1 0; width: auto; min-width: 0; }
 .composer-close { background: transparent; color: var(--muted); width: 44px; padding: 0; display: grid; place-items: center; }
 .composer-close:hover { background: var(--card); color: var(--text); }
+
+/* No blur, opaque panels, no wallpaper: for users who ask for less transparency, and where backdrop-filter is missing. */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --blur: 0px; --bar: var(--card); --g-surface: var(--g-solid); --pop: var(--g-solid); --wall: none; }
+  .column { --col-fill: linear-gradient(var(--tint), var(--tint)) var(--bg); }
+  header, .column, dialog, #movePop { -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@supports not (backdrop-filter: blur(1px)) {
+  :root { --bar: var(--card); --g-surface: var(--g-solid); --pop: var(--g-solid); --wall: none; }
+  .column { --col-fill: linear-gradient(var(--tint), var(--tint)) var(--bg); }
+}
 
 /* Glass: only the detail dialog. Everything else stays flat. */
 dialog { width: min(680px, 100vw); max-height: calc(100dvh - 32px); scrollbar-width: thin; scrollbar-color: var(--line) transparent; margin: auto; padding: 0; border: 1px solid var(--g-border); border-radius: 16px; background: var(--g-surface); color: var(--g-text); box-shadow: var(--g-shadow); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); --focus: var(--g-primary); }
