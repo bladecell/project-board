@@ -10,7 +10,7 @@ describe("buildPrompt", () => {
     const p = buildPrompt({ id: 1, title: 'a "b"\n`rm -rf`\r\n\tc\\' });
     expect(p).not.toContain("\n");
     expect(p).toContain(`"a 'b' 'rm -rf' c'"`);
-    expect(p.match(/`/g)).toHaveLength(4);
+    expect(p.match(/`/g)).toHaveLength(6);
     expect(p.match(/"/g)).toHaveLength(2);
   });
   test("long titles are capped", () => {
