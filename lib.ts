@@ -6,6 +6,10 @@ export const types = ["bug", "feature", "task", "decision"] as const;
 export type Column = (typeof columns)[number];
 export type CardType = (typeof types)[number];
 
+export type Source = "ui" | "cli";
+export type Ctx = { by: Source; now?: Date };
+export type HistoryEntry = { at: string; text: string; by: Source };
+
 export type Card = {
   id: number;
   file: string;
@@ -21,9 +25,12 @@ export type Card = {
   description: string;
   verifyNotes: string;
   howToVerify: string;
+  created: string;
+  updated: string;
+  history: HistoryEntry[];
 };
 
-export type Patch = Partial<Omit<Card, "id" | "file" | "order">>;
+export type Patch = Partial<Omit<Card, "id" | "file" | "order" | "created" | "updated" | "history">>;
 
 const isColumn = (v: unknown): v is Column => columns.includes(v as Column);
 const isType = (v: unknown): v is CardType => types.includes(v as CardType);
@@ -40,7 +47,18 @@ export const slugify = (title: string) =>
 
 export const fileName = (id: number, title: string) => `${String(id).padStart(4, "0")}-${slugify(title)}.md`;
 
-const sections = { "verify notes": "verifyNotes", "how to verify": "howToVerify" } as const;
+const sections = { "verify notes": "verifyNotes", "how to verify": "howToVerify", history: "history" } as const;
+const maxHistory = 200;
+const maxEventText = 160;
+const isoRe = /^\d{4}-\d\d-\d\dT[\d:.]+Z$/;
+const validIso = (v: string | undefined) => (v && isoRe.test(v) && Number.isFinite(Date.parse(v)) ? v : "");
+export const iso = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, "Z");
+const cut = (s: string) => (s.length > maxEventText ? `${s.slice(0, maxEventText - 1)}…` : s);
+
+export function parseHistoryLine(l: string): HistoryEntry | null {
+  const m = /^- (\d{4}-\d\d-\d\dT[\d:.]+Z) · (.+) · (ui|cli)\s*$/.exec(l);
+  return m ? { at: m[1], text: m[2], by: m[3] as Source } : null;
+}
 
 export function parseCard(file: string, text: string): Card | null {
   const id = idOf(file);
@@ -58,10 +76,10 @@ export function parseCard(file: string, text: string): Card | null {
       bodyStart = end + 1;
     }
   }
-  const parts = { description: [] as string[], verifyNotes: [] as string[], howToVerify: [] as string[] };
+  const parts = { description: [] as string[], verifyNotes: [] as string[], howToVerify: [] as string[], history: [] as string[] };
   let cur: keyof typeof parts = "description";
   for (const l of lines.slice(bodyStart)) {
-    const m = /^##\s+(verify notes|how to verify)\s*$/i.exec(l);
+    const m = /^##\s+(verify notes|how to verify|history)\s*$/i.exec(l);
     if (m) cur = sections[m[1].toLowerCase() as keyof typeof sections];
     else parts[cur].push(l);
   }
@@ -81,6 +99,9 @@ export function parseCard(file: string, text: string): Card | null {
     description: parts.description.join("\n").trim(),
     verifyNotes: parts.verifyNotes.join("\n").trim(),
     howToVerify: parts.howToVerify.join("\n").trim(),
+    created: validIso(meta.created),
+    updated: validIso(meta.updated),
+    history: parts.history.flatMap((l) => parseHistoryLine(l) ?? []).slice(-maxHistory),
   };
 }
 
@@ -89,10 +110,15 @@ export function serializeCard(c: Card): string {
   if (c.taskId) head.push(`taskId: ${oneLine(c.taskId)}`);
   if (c.phase) head.push(`phase: ${oneLine(c.phase)}`);
   if (c.lane) head.push(`lane: ${oneLine(c.lane)}`);
+  if (c.created) head.push(`created: ${c.created}`);
+  if (c.updated) head.push(`updated: ${c.updated}`);
   head.push(`needsYou: ${c.needsYou}`, `blocked: ${c.blocked}`, `title: ${oneLine(c.title)}`);
-  const body = [c.description.trim()];
-  if (c.verifyNotes.trim()) body.push(`## Verify notes\n${c.verifyNotes.trim()}`);
-  if (c.howToVerify.trim()) body.push(`## How to verify\n${c.howToVerify.trim()}`);
+  // a leading space keeps user text from being read back as a section heading
+  const safe = (t: string) => t.trim().replace(/^(##\s+(?:verify notes|how to verify|history)\s*)$/gim, " $1");
+  const body = [safe(c.description)];
+  if (c.verifyNotes.trim()) body.push(`## Verify notes\n${safe(c.verifyNotes)}`);
+  if (c.howToVerify.trim()) body.push(`## How to verify\n${safe(c.howToVerify)}`);
+  if (c.history.length) body.push(`## History\n${c.history.slice(-maxHistory).map((h) => `- ${h.at} · ${cut(oneLine(h.text))} · ${h.by}`).join("\n")}`);
   return `---\n${head.join("\n")}\n---\n\n${body.filter(Boolean).join("\n\n")}\n`;
 }
 
@@ -153,6 +179,33 @@ export function applyPatch(c: Card, p: Record<string, unknown>): Card {
   return out;
 }
 
+const material = ["column", "type", "taskId", "phase", "lane", "needsYou", "blocked", "title", "description", "verifyNotes", "howToVerify"] as const;
+const none = (v: string) => v || "(none)";
+
+function diffEvents(a: Card, b: Card): string[] {
+  const ev: string[] = [];
+  if (a.column !== b.column) ev.push(`moved ${a.column} → ${b.column}`);
+  for (const [k, label] of [["needsYou", "needs you"], ["blocked", "blocked"]] as const) {
+    if (a[k] !== b[k]) ev.push(`${label} ${b[k] ? "set" : "cleared"}`);
+  }
+  if (a.type !== b.type) ev.push(`type ${a.type} → ${b.type}`);
+  for (const k of ["title", "phase", "taskId", "lane"] as const) {
+    if (a[k] !== b[k]) ev.push(`${k} ${none(a[k])} → ${none(b[k])}`);
+  }
+  if (a.verifyNotes !== b.verifyNotes) ev.push("verify notes updated");
+  return ev;
+}
+
+// Single place that owns created/updated/history. Returns `next` itself when nothing real changed.
+export function stamp(old: Card | null, next: Card, ctx: Ctx): Card {
+  const at = iso(ctx.now ?? new Date());
+  const entry = (text: string): HistoryEntry => ({ at, text: cut(oneLine(text)), by: ctx.by });
+  if (!old) return { ...next, created: at, updated: at, history: [entry("created")] };
+  if (!material.some((k) => old[k] !== next[k])) return next;
+  const history = [...old.history, ...diffEvents(old, next).map(entry)].slice(-maxHistory);
+  return { ...next, created: old.created || at, updated: at, history };
+}
+
 export function atomicWrite(path: string, data: string | Uint8Array) {
   const tmp = join(dirname(path), `.${basename(path)}.${process.pid}.tmp`);
   writeFileSync(tmp, data);
@@ -174,8 +227,15 @@ export function loadCards(dir: string): Card[] {
   if (!existsSync(cardsDir)) return [];
   return readdirSync(cardsDir).flatMap((f) => {
     try {
-      const c = parseCard(f, readFileSync(join(cardsDir, f), "utf8"));
-      return c ? [c] : [];
+      const path = join(cardsDir, f);
+      const c = parseCard(f, readFileSync(path, "utf8"));
+      if (!c) return [];
+      if (!c.created || !c.updated) {
+        const st = statSync(path);
+        c.updated ||= iso(st.mtime);
+        c.created ||= iso(st.birthtimeMs > 0 ? st.birthtime : st.mtime);
+      }
+      return [c];
     } catch {
       return [];
     }
@@ -184,38 +244,41 @@ export function loadCards(dir: string): Card[] {
 
 export const writeCard = (dir: string, c: Card) => atomicWrite(join(dir, "cards", c.file), serializeCard(c));
 
-export function createCard(dir: string, input: Record<string, unknown>): Card {
+export function createCard(dir: string, input: Record<string, unknown>, ctx: Ctx): Card {
   const cards = loadCards(dir);
   const id = nextId(cards);
   const base = applyPatch({
     id, file: "", column: "inbox", order: 0, type: "task", taskId: "", phase: "", lane: "",
     needsYou: false, blocked: false, title: "", description: "", verifyNotes: "", howToVerify: "",
+    created: "", updated: "", history: [],
   }, input);
   if (!base.title) throw new Error("title required");
-  const card = { ...base, file: fileName(id, base.title), order: endOrder(cards, base.column) };
+  const card = stamp(null, { ...base, file: fileName(id, base.title), order: endOrder(cards, base.column) }, ctx);
   writeCard(dir, card);
   return card;
 }
 
-export function updateCard(dir: string, id: number, patch: Record<string, unknown>): Card {
+export function updateCard(dir: string, id: number, patch: Record<string, unknown>, ctx: Ctx): Card {
   const cards = loadCards(dir);
   const old = cards.find((c) => c.id === id);
   if (!old) throw new Error(`no card ${id}`);
   const next = applyPatch(old, patch);
-  writeCard(dir, next);
-  return next;
+  const out = stamp(old, next, ctx);
+  if (out !== next) writeCard(dir, out);
+  return out;
 }
 
-export function moveCard(dir: string, id: number, column: Column, beforeId: number | null = null, notes?: string): Card {
+export function moveCard(dir: string, id: number, column: Column, beforeId: number | null, notes: string | undefined, ctx: Ctx): Card {
   const cards = loadCards(dir);
   const old = cards.find((c) => c.id === id);
   if (!old) throw new Error(`no card ${id}`);
   const changed = placeCard(cards, id, column, beforeId);
   let moved = changed.find((c) => c.id === id) ?? old;
   if (notes) moved = appendNotes(moved, notes);
-  for (const c of changed) writeCard(dir, c.id === id ? moved : c);
-  if (!changed.some((c) => c.id === id)) writeCard(dir, moved);
-  return moved;
+  const out = stamp(old, moved, ctx);
+  for (const c of changed) if (c.id !== id) writeCard(dir, c);
+  if (out !== moved || moved.order !== old.order) writeCard(dir, out);
+  return out;
 }
 
 export function deleteCard(dir: string, id: number) {

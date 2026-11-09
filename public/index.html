@@ -130,6 +130,13 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 .todo-list label { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--text); font-size: 15px; }
 .actions { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
 .actions div { display: flex; gap: 8px; }
+.age { margin-left: auto; font-variant-numeric: tabular-nums; }
+.log { display: grid; gap: 6px; padding-top: 12px; border-top: 1px solid var(--line-soft); }
+.log h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--muted); }
+.log ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; }
+.log li { display: flex; flex-wrap: wrap; gap: 2px 10px; }
+.log time, .log .src { color: var(--muted); font-variant-numeric: tabular-nums; }
+.log .src { margin-left: auto; }
 .hint { color: var(--muted); font-size: 13px; margin: 0; }
 @media (max-width: 600px) { dialog { height: 100dvh; border-radius: 0; } }
 @media (prefers-reduced-motion: no-preference) { button { transition: background-color .12s; } }
@@ -167,6 +174,11 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
     <label class="f"><span>How to verify (one "- [ ] step" per line)</span><textarea name="howToVerify" rows="4"></textarea></label>
     <ul class="todo-list" id="steps" aria-label="Verification steps"></ul>
     <div class="imgs" id="imgs"></div>
+    <section class="log" aria-label="History">
+      <h3>History</h3>
+      <p class="hint" id="stamps"></p>
+      <ol id="hist"></ol>
+    </section>
     <p class="hint" id="formMsg" role="status"></p>
     <div class="actions">
       <button type="button" class="danger" id="del">Delete card</button>
@@ -217,6 +229,7 @@ async function load() {
     cards = await api("/api/cards");
     loaded = true;
     banner("");
+    if (openId !== null) renderLog();
   } catch (e) {
     banner(`Could not load cards: ${e.message}. Retrying when the server is back.`);
   }
@@ -267,12 +280,21 @@ function columnEl(col) {
   return el;
 }
 
+const when = (iso) => (iso ? new Date(iso).toLocaleString() : "unknown");
+const age = (iso) => {
+  const s = (Date.now() - Date.parse(iso)) / 1000;
+  if (!Number.isFinite(s)) return "";
+  for (const [n, u] of [[604800, "w"], [86400, "d"], [3600, "h"], [60, "m"]]) if (s >= n) return `${Math.floor(s / n)}${u}`;
+  return "now";
+};
+
 function cardEl(c) {
   const showPhase = c.phase && c.phase.toLowerCase() !== "backlog";
   const ref = [`#${c.id}`, c.taskId].filter(Boolean).join(" · ");
   const meta = h("div", { className: "meta" }, h("span", { className: `pill ${typeList.includes(c.type) ? c.type : "task"}`, textContent: c.type }),
     h("span", { className: "ref", textContent: ref }), showPhase && h("span", { className: "chip", textContent: c.phase }), c.lane && h("span", { className: "chip", textContent: c.lane }),
-    c.needsYou && h("span", { className: "flag need", textContent: "Needs you" }), c.blocked && h("span", { className: "flag block", textContent: "Blocked" }));
+    c.needsYou && h("span", { className: "flag need", textContent: "Needs you" }), c.blocked && h("span", { className: "flag block", textContent: "Blocked" }),
+    c.updated && h("span", { className: "age", textContent: age(c.updated), title: `Updated ${when(c.updated)}` }));
   const el = h("article", { className: "card", draggable: true, tabIndex: 0, role: "button", ariaLabel: `Open card ${c.id}: ${c.title}` },
     h("span", { className: "title", textContent: c.title }), meta);
   el.dataset.id = c.id;
@@ -330,8 +352,17 @@ function openCard(id) {
   form.blocked.checked = c.blocked;
   $("#formMsg").textContent = "";
   refreshExtras();
+  renderLog();
   dlg.showModal();
   form.title.focus();
+}
+
+function renderLog() {
+  const c = cards.find((x) => x.id === openId);
+  if (!c) return;
+  $("#stamps").textContent = `Created ${when(c.created)}. Updated ${when(c.updated)}.`;
+  const items = c.history.map((e) => h("li", {}, h("time", { dateTime: e.at, textContent: when(e.at) }), h("span", { textContent: e.text }), h("span", { className: "src", textContent: e.by })));
+  $("#hist").replaceChildren(...(items.length ? items : [h("li", { className: "hint", textContent: "No history recorded yet." })]));
 }
 
 const imgRefs = (t) => [...t.matchAll(/!\[[^\]]*\]\((images\/[A-Za-z0-9._-]+)\)/g)].map((m) => m[1]);

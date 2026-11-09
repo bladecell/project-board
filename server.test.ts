@@ -63,4 +63,19 @@ describe("server", () => {
     const res = await fetch(base + "/api/cards", { method: "POST", headers: { "content-type": "application/json", origin: "http://evil.test" }, body: JSON.stringify({ title: "x" }) });
     expect(res.status).toBe(403);
   });
+
+  test("API returns history, source ui, and ignores client history/timestamps", async () => {
+    const c = await (await post("/api/cards", JSON.stringify({ title: "h", created: "2000-01-01T00:00:00Z", history: [{ at: "x", text: "forged", by: "cli" }] }))).json();
+    expect(c.created).not.toBe("2000-01-01T00:00:00Z");
+    expect(c.history).toMatchObject([{ text: "created", by: "ui" }]);
+    const put = await fetch(`${base}/api/cards/${c.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ phase: "P9", history: [], updated: "1999-01-01T00:00:00Z" }) });
+    const u = await put.json();
+    expect(u.history.map((h: { text: string }) => h.text)).toEqual(["created", "phase (none) → P9"]);
+    expect(u.updated).not.toBe("1999-01-01T00:00:00Z");
+    expect(u).not.toHaveProperty("file");
+    const mv = await (await post(`/api/cards/${c.id}/move`, JSON.stringify({ column: "verify" }))).json();
+    expect(mv.history.at(-1)).toMatchObject({ text: "moved inbox → verify", by: "ui" });
+    const noop = await (await post(`/api/cards/${c.id}/move`, JSON.stringify({ column: "verify" }))).json();
+    expect(noop.history).toHaveLength(3);
+  });
 });

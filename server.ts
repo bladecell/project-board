@@ -2,6 +2,7 @@ import { mkdirSync, watch } from "node:fs";
 import { join } from "node:path";
 import { atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
 
+const ui = { by: "ui" } as const;
 const maxJson = 1_000_000;
 const maxImage = 10 * 1024 * 1024;
 const imageTypes: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
@@ -79,19 +80,19 @@ export function startServer(dir: string, port: number, name: string) {
       return new Response(stream.pipeThrough(new TextEncoderStream()), { headers: { ...security, "content-type": "text/event-stream", connection: "keep-alive" } });
     }
 
-    if (m === "POST" && p === "/api/cards") return json(publicCard(createCard(dir, await readJson(req))), 201);
+    if (m === "POST" && p === "/api/cards") return json(publicCard(createCard(dir, await readJson(req), ui)), 201);
 
     const cm = /^\/api\/cards\/(\d{1,9})(\/move)?$/.exec(p);
     if (cm) {
       const id = cardId(cm[1]);
-      if (m === "PUT" && !cm[2]) return json(publicCard(updateCard(dir, id, await readJson(req))));
+      if (m === "PUT" && !cm[2]) return json(publicCard(updateCard(dir, id, await readJson(req), ui)));
       if (m === "DELETE" && !cm[2]) { deleteCard(dir, id); return json({ ok: true }); }
       if (m === "POST" && cm[2]) {
         const b = await readJson(req);
         if (!columns.includes(b.column as never)) throw new HttpError(400, "invalid column");
         const before = b.before === null || b.before === undefined ? null : Number(b.before);
         if (before !== null && !Number.isSafeInteger(before)) throw new HttpError(400, "invalid before");
-        return json(publicCard(moveCard(dir, id, b.column as never, before)));
+        return json(publicCard(moveCard(dir, id, b.column as never, before, undefined, ui)));
       }
     }
 

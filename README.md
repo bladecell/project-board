@@ -41,6 +41,8 @@ type: bug            # bug | feature | task | decision
 taskId: P2.3         # optional, as are phase and lane
 phase: P2
 lane: fw
+created: 2026-11-09T21:40:12Z   # set by the tool, ISO UTC
+updated: 2026-11-10T08:00:00Z   # bumped on any real change
 needsYou: true
 blocked: false
 title: Fix ISO-TP bound
@@ -53,6 +55,12 @@ Free text markdown. Images: ![](images/abc.png)
 
 ## How to verify
 - [ ] flash and watch the log
+
+## History
+- 2026-11-09T21:40:12Z · created · cli
+- 2026-11-10T08:00:00Z · moved inbox → verify · ui
 ```
+
+`created`, `updated` and `## History` are owned by the tool (the API ignores client values). History logs creation, moves, flag, type, title, phase, taskId and lane changes, and "verify notes updated"; the last field is the source, `ui` or `cli`. Description and checklist edits only bump `updated`. Capped at 200 lines. Cards without these fields get created/updated from file times on read and are written on their next real change.
 
 Test: `bun test`.

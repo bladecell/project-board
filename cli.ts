@@ -76,11 +76,11 @@ try {
       title, ...(values.type && { type: values.type }), ...(values.column && { column: column(values.column) }),
       ...(values.task && { taskId: values.task }), ...(values.phase && { phase: values.phase }), ...(values.lane && { lane: values.lane }),
       ...(values["needs-you"] && { needsYou: true }), ...(values.blocked && { blocked: true }),
-    });
+    }, { by: "cli" });
     console.log(line(c));
   } else if (cmd === "move") {
     if (args.length < 2) fail("usage: board move <id> <column> [--notes ...]");
-    console.log(line(moveCard(need(), cardId(args[0]), column(args[1]), null, values.notes)));
+    console.log(line(moveCard(need(), cardId(args[0]), column(args[1]), null, values.notes, { by: "cli" })));
   } else if (cmd === "list") {
     const col = args[0] ? column(args[0]) : null;
     const cards = sortCards(loadCards(need())).filter((c) => (col ? c.column === col : c.column !== "done"));
