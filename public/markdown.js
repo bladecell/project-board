@@ -52,7 +52,7 @@ function inline(s, depth, noLink) {
           const url = s.slice(close + 2, end).trim();
           if (img && imgOk(url)) {
             flush();
-            out.push(`<a href="/${url}" target="_blank" rel="noopener noreferrer"><img src="/${url}" alt="${esc(label)}"></a>`);
+            out.push(`<a href="/${url}" target="_blank" rel="noopener noreferrer"><img src="/${url}" alt="${esc(label)}" loading="lazy" decoding="async"></a>`);
           } else if (!img && linkOk(url)) {
             flush();
             out.push(`<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${canNest ? inline(label, depth + 1, true) : esc(label)}</a>`);

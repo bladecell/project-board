@@ -3,7 +3,7 @@ import { countTasks, listToTasks, renderMarkdown as md, toggleTask } from "./pub
 
 // Inert means: only allowed elements, only allowed attribute names, and URL attributes limited to safe targets.
 const allowedTags = new Set(["p", "br", "h1", "h2", "h3", "h4", "h5", "h6", "strong", "em", "code", "pre", "ul", "ol", "li", "blockquote", "hr", "a", "img", "input", "span", "div", "label"]);
-const allowedAttrs = ["href", "src", "alt", "target", "rel", "class", "type", "data-task", "aria-label"];
+const allowedAttrs = ["href", "src", "alt", "loading", "decoding", "target", "rel", "class", "type", "data-task", "aria-label"];
 function assertInert(html: string) {
   for (const m of html.matchAll(/<\/?([a-zA-Z0-9]+)((?:\s+[a-zA-Z-]+(?:="[^"]*")?)*)\s*>/g)) {
     expect(allowedTags.has(m[1].toLowerCase())).toBe(true);
@@ -92,7 +92,7 @@ describe("inline", () => {
     expect(out).not.toContain("<a ");
   });
   test("images: only images/<safe name> with image extension", () => {
-    expect(md("![shot](images/abc-1.png)")).toContain('<a href="/images/abc-1.png" target="_blank" rel="noopener noreferrer"><img src="/images/abc-1.png" alt="shot"></a>');
+    expect(md("![shot](images/abc-1.png)")).toContain('<a href="/images/abc-1.png" target="_blank" rel="noopener noreferrer"><img src="/images/abc-1.png" alt="shot" loading="lazy" decoding="async"></a>');
     for (const bad of ["http://evil.test/x.png", "/images/x.png", "images/../x.png", "images/a/b.png", "images/x.svg", "data:image/png;base64,AAAA", "javascript:alert(1)", "images/x.png\" onerror=\"alert(1)", "images/.png", "images/%2e%2e%2fx.png"]) {
       expect(md(`![a](${bad})`)).not.toContain("<img");
     }
