@@ -1,0 +1,9 @@
+{
+  "name": "project-board",
+  "version": "0.1.0",
+  "description": "Local kanban board backed by markdown files, with a CLI for agents",
+  "type": "module",
+  "bin": { "board": "./cli.ts" },
+  "scripts": { "test": "bun test" },
+  "license": "MIT"
+}

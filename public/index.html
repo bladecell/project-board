@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project board</title>
+<style>
+/* Reading: personal dev tool, calm kanban. ENERGY 1 / RHYTHM 1 / MOTION 1.
+   System fonts: instant and offline. One accent (teal), amber and red only for the two flags. */
+:root {
+  --bg: #f3f4f6; --col: #e6e9ee; --card: #fff; --line: #c9ced6;
+  --text: #1a1e24; --muted: #505a68; --accent: #0b6b5f; --accent-text: #fff;
+  --need-bg: #fbe3a8; --need-text: #4d3000; --block-bg: #f8d3d3; --block-text: #7a1010;
+  --focus: #0b6b5f; --scrim: rgb(20 24 30 / .55);
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151a; --col: #1b1f26; --card: #272c35; --line: #3d4451;
+    --text: #e8eaee; --muted: #a6afbc; --accent: #4fd1c0; --accent-text: #08201c;
+    --need-bg: #4d3c0e; --need-text: #ffdf9a; --block-bg: #5a2020; --block-text: #ffcdcd;
+    --focus: #4fd1c0; --scrim: rgb(0 0 0 / .65);
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--sans); min-height: 100dvh; display: flex; flex-direction: column; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button, select, input:not([type=checkbox]) { min-height: 44px; }
+button { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 0 14px; }
+button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button.danger { color: var(--block-text); }
+input:not([type=checkbox]), select, textarea { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; }
+textarea { padding: 10px; min-height: 120px; resize: vertical; line-height: 1.45; }
+
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+h1 { font-size: 18px; margin: 0; flex: 1 1 auto; }
+header label { display: flex; gap: 8px; align-items: center; color: var(--muted); }
+header select { width: auto; min-width: 160px; }
+#banner { margin: 12px 16px 0; padding: 10px 14px; border-radius: 6px; background: var(--block-bg); color: var(--block-text); }
+#banner[hidden] { display: none; }
+
+#board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; scroll-snap-type: x proximity; }
+.column { flex: 0 0 280px; max-width: 86vw; background: var(--col); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; max-height: calc(100dvh - 110px); }
+.column h2 { margin: 2px 4px; font-size: 14px; display: flex; justify-content: space-between; }
+.column h2 .count { color: var(--muted); font-weight: 400; }
+.column.over { outline: 2px dashed var(--accent); outline-offset: -2px; }
+.list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 24px; padding: 2px; }
+.empty { color: var(--muted); padding: 6px 4px; margin: 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; cursor: grab; display: flex; flex-direction: column; gap: 6px; min-height: 44px; }
+.card.dragging { opacity: .4; }
+.card .title { font-weight: 600; overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: 13px; }
+.meta .id { font-family: var(--mono); }
+.flags { display: flex; gap: 6px; flex-wrap: wrap; }
+.flag { font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 4px; }
+.flag.need { background: var(--need-bg); color: var(--need-text); }
+.flag.block { background: var(--block-bg); color: var(--block-text); }
+.drop-line { height: 3px; border-radius: 2px; background: var(--accent); flex: none; }
+.add { display: flex; gap: 6px; }
+.add input { flex: 1; min-width: 0; }
+
+dialog { width: min(680px, 100vw); max-height: 100dvh; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); }
+dialog::backdrop { background: var(--scrim); }
+dialog form { padding: 16px; display: grid; gap: 14px; }
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+label.f { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+label.f > :not(span) { color: var(--text); font-size: 15px; }
+.checks { display: flex; gap: 20px; flex-wrap: wrap; }
+.checks label { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
+.imgs { display: flex; flex-wrap: wrap; gap: 8px; }
+.imgs img { max-width: 100%; max-height: 240px; border-radius: 6px; border: 1px solid var(--line); }
+.todo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.todo-list label { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--text); font-size: 15px; }
+.actions { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.actions div { display: flex; gap: 8px; }
+.hint { color: var(--muted); font-size: 13px; margin: 0; }
+@media (max-width: 600px) { dialog { height: 100dvh; border-radius: 0; } }
+@media (prefers-reduced-motion: no-preference) { button { transition: background-color .12s; } }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="name">Board</h1>
+  <label>Phase <select id="phase"><option value="">All phases</option></select></label>
+</header>
+<div id="banner" role="alert" hidden></div>
+<main id="board" aria-label="Kanban board"><p class="empty">Loading board</p></main>
+
+<dialog id="dlg" aria-labelledby="dlgTitle">
+  <form id="form" method="dialog">
+    <label class="f"><span id="dlgTitle">Title</span><input name="title" required maxlength="200"></label>
+    <div class="row">
+      <label class="f"><span>Column</span><select name="column"></select></label>
+      <label class="f"><span>Type</span><select name="type"></select></label>
+      <label class="f"><span>Task id</span><input name="taskId" maxlength="60" placeholder="P2.3"></label>
+      <label class="f"><span>Phase</span><input name="phase" maxlength="60"></label>
+      <label class="f"><span>Lane</span><input name="lane" maxlength="60"></label>
+    </div>
+    <div class="checks">
+      <label><input type="checkbox" name="needsYou"> Needs you</label>
+      <label><input type="checkbox" name="blocked"> Blocked</label>
+    </div>
+    <label class="f"><span>Description (markdown, paste images here)</span><textarea name="description" rows="6"></textarea></label>
+    <label class="f"><span>Verify notes</span><textarea name="verifyNotes" rows="4"></textarea></label>
+    <label class="f"><span>How to verify (one "- [ ] step" per line)</span><textarea name="howToVerify" rows="4"></textarea></label>
+    <ul class="todo-list" id="steps" aria-label="Verification steps"></ul>
+    <div class="imgs" id="imgs"></div>
+    <p class="hint" id="formMsg" role="status"></p>
+    <div class="actions">
+      <button type="button" class="danger" id="del">Delete card</button>
+      <div><button type="button" id="close">Close</button><button type="submit" class="primary">Save card</button></div>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const labels = { inbox: "Inbox", planned: "Planned", todo: "Todo", "in-progress": "In progress", verify: "Verify", done: "Done" };
+const typeList = ["bug", "feature", "task", "decision"];
+const $ = (s) => document.querySelector(s);
+const h = (tag, props = {}, ...kids) => {
+  const el = Object.assign(document.createElement(tag), props);
+  el.append(...kids.filter((k) => k !== null && k !== false));
+  return el;
+};
+const store = {
+  get(k) { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+
+let cards = [];
+let columns = Object.keys(labels);
+let phase = store.get("board.phase");
+let loaded = false;
+let openId = null;
+const drafts = {};
+
+const api = async (path, method = "GET", body) => {
+  const res = await fetch(path, {
+    method,
+    headers: body === undefined ? {} : { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `request failed (${res.status})`);
+  return data;
+};
+const banner = (msg) => { $("#banner").hidden = !msg; $("#banner").textContent = msg || ""; };
+
+async function load() {
+  try {
+    cards = await api("/api/cards");
+    loaded = true;
+    banner("");
+  } catch (e) {
+    banner(`Could not load cards: ${e.message}. Retrying when the server is back.`);
+  }
+  render();
+}
+
+function render() {
+  const sel = $("#phase");
+  const phases = [...new Set(cards.map((c) => c.phase).filter(Boolean))].sort();
+  if (phase && !phases.includes(phase)) phases.push(phase);
+  sel.replaceChildren(h("option", { value: "", textContent: "All phases" }), ...phases.map((p) => h("option", { value: p, textContent: p })));
+  sel.value = phase;
+
+  const board = $("#board");
+  if (!loaded) { board.replaceChildren(h("p", { className: "empty", textContent: "Loading board" })); return; }
+  const focused = document.activeElement?.closest?.(".add") && document.activeElement.closest(".column").dataset.col;
+  board.replaceChildren(...columns.map(columnEl));
+  if (focused) $(`.column[data-col="${focused}"] .add input`)?.focus();
+}
+
+function columnEl(col) {
+  const mine = cards.filter((c) => c.column === col);
+  const shown = mine.filter((c) => !phase || c.phase === phase);
+  const list = h("div", { className: "list" }, ...shown.map(cardEl));
+  if (!shown.length) list.append(h("p", { className: "empty", textContent: mine.length ? "No cards in this phase" : "Nothing here" }));
+  const input = h("input", { placeholder: "Add a card", maxLength: 200, ariaLabel: `Add card to ${labels[col]}` });
+  input.value = drafts[col] ?? "";
+  input.oninput = () => { drafts[col] = input.value; };
+  const add = h("form", { className: "add" }, input, h("button", { type: "submit", textContent: "Add" }));
+  add.onsubmit = async (e) => {
+    e.preventDefault();
+    const title = input.value.trim();
+    if (!title) return;
+    try {
+      await api("/api/cards", "POST", { title, column: col, ...(phase && { phase }) });
+      input.value = drafts[col] = "";
+      await load();
+      $(`.column[data-col="${col}"] .add input`)?.focus();
+    } catch (err) { banner(err.message); }
+  };
+  const el = h("section", { className: "column" }, h("h2", {}, labels[col], h("span", { className: "count", textContent: String(shown.length) })), list, add);
+  el.dataset.col = col;
+  wireDrop(el, list, col);
+  return el;
+}
+
+function cardEl(c) {
+  const meta = h("div", { className: "meta" }, h("span", { className: "id", textContent: `#${c.id}` }), h("span", { textContent: c.type }),
+    c.taskId && h("span", { className: "id", textContent: c.taskId }), c.phase && h("span", { textContent: c.phase }), c.lane && h("span", { textContent: c.lane }));
+  const flags = (c.needsYou || c.blocked) && h("div", { className: "flags" },
+    c.needsYou && h("span", { className: "flag need", textContent: "Needs you" }), c.blocked && h("span", { className: "flag block", textContent: "Blocked" }));
+  const el = h("article", { className: "card", draggable: true, tabIndex: 0, role: "button", ariaLabel: `Open card ${c.id}: ${c.title}` },
+    h("span", { className: "title", textContent: c.title }), meta, flags);
+  el.dataset.id = c.id;
+  el.onclick = () => openCard(c.id);
+  el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openCard(c.id); } };
+  el.ondragstart = (e) => { e.dataTransfer.setData("text/plain", String(c.id)); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); };
+  el.ondragend = () => { el.classList.remove("dragging"); clearDrop(); };
+  return el;
+}
+
+const line = h("div", { className: "drop-line" });
+const clearDrop = () => { line.remove(); document.querySelectorAll(".over").forEach((e) => e.classList.remove("over")); };
+
+function dropTarget(list, y) {
+  return [...list.querySelectorAll(".card:not(.dragging)")].find((el) => {
+    const r = el.getBoundingClientRect();
+    return y < r.top + r.height / 2;
+  }) ?? null;
+}
+
+function wireDrop(colEl, list, col) {
+  colEl.ondragover = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    colEl.classList.add("over");
+    const before = dropTarget(list, e.clientY);
+    before ? list.insertBefore(line, before) : list.append(line);
+  };
+  colEl.ondragleave = (e) => { if (!colEl.contains(e.relatedTarget)) clearDrop(); };
+  colEl.ondrop = async (e) => {
+    e.preventDefault();
+    const id = Number(e.dataTransfer.getData("text/plain"));
+    const before = dropTarget(list, e.clientY);
+    clearDrop();
+    if (!id) return;
+    try {
+      await api(`/api/cards/${id}/move`, "POST", { column: col, before: before ? Number(before.dataset.id) : null });
+    } catch (err) { banner(err.message); }
+    await load();
+  };
+}
+
+/* detail dialog */
+const dlg = $("#dlg"), form = $("#form");
+form.column.replaceChildren(...Object.entries(labels).map(([v, t]) => h("option", { value: v, textContent: t })));
+form.type.replaceChildren(...typeList.map((v) => h("option", { value: v, textContent: v })));
+
+function openCard(id) {
+  const c = cards.find((x) => x.id === id);
+  if (!c) return;
+  openId = id;
+  $("#dlgTitle").textContent = `Card #${id}`;
+  for (const k of ["title", "column", "type", "taskId", "phase", "lane", "description", "verifyNotes", "howToVerify"]) form[k].value = c[k];
+  form.needsYou.checked = c.needsYou;
+  form.blocked.checked = c.blocked;
+  $("#formMsg").textContent = "";
+  refreshExtras();
+  dlg.showModal();
+  form.title.focus();
+}
+
+const imgRefs = (t) => [...t.matchAll(/!\[[^\]]*\]\((images\/[A-Za-z0-9._-]+)\)/g)].map((m) => m[1]);
+
+function refreshExtras() {
+  const refs = [...new Set([...imgRefs(form.description.value), ...imgRefs(form.verifyNotes.value)])];
+  $("#imgs").replaceChildren(...refs.map((r) => h("a", { href: `/${r}`, target: "_blank", rel: "noopener" }, h("img", { src: `/${r}`, alt: r.slice(7), loading: "lazy" }))));
+  const steps = [...form.howToVerify.value.matchAll(/^[ \t]*- \[( |x|X)\] (.*)$/gm)];
+  $("#steps").replaceChildren(...steps.map((m, i) => {
+    const box = h("input", { type: "checkbox", checked: m[1] !== " " });
+    box.onchange = () => toggleStep(i, box.checked);
+    return h("li", {}, h("label", {}, box, h("span", { textContent: m[2] })));
+  }));
+}
+
+async function toggleStep(index, on) {
+  let n = -1;
+  form.howToVerify.value = form.howToVerify.value.replace(/^([ \t]*- \[)( |x|X)(\] .*)$/gm, (all, a, _m, b) => (++n === index ? `${a}${on ? "x" : " "}${b}` : all));
+  await save(false);
+}
+
+async function save(close = true) {
+  if (openId === null || !form.reportValidity()) return;
+  const body = Object.fromEntries(["title", "column", "type", "taskId", "phase", "lane", "description", "verifyNotes", "howToVerify"].map((k) => [k, form[k].value]));
+  body.needsYou = form.needsYou.checked;
+  body.blocked = form.blocked.checked;
+  try {
+    await api(`/api/cards/${openId}`, "PUT", body);
+    $("#formMsg").textContent = "Saved";
+    if (close) dlg.close();
+    await load();
+  } catch (e) { $("#formMsg").textContent = `Not saved: ${e.message}`; }
+}
+
+form.onsubmit = (e) => { e.preventDefault(); save(); };
+$("#close").onclick = () => dlg.close();
+$("#del").onclick = async () => {
+  if (openId === null || !confirm(`Delete card #${openId}? This removes its file.`)) return;
+  try { await api(`/api/cards/${openId}`, "DELETE"); dlg.close(); await load(); } catch (e) { $("#formMsg").textContent = e.message; }
+};
+dlg.onclose = () => { openId = null; };
+dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
+for (const k of ["description", "verifyNotes", "howToVerify"]) form[k].addEventListener("input", refreshExtras);
+
+async function onPaste(e) {
+  const file = [...(e.clipboardData?.files ?? [])].find((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type));
+  if (!file) return;
+  e.preventDefault();
+  const ta = e.target;
+  try {
+    const res = await fetch("/api/images", { method: "POST", headers: { "content-type": file.type }, body: file });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    const md = `![](${data.url})`;
+    ta.setRangeText(md, ta.selectionStart, ta.selectionEnd, "end");
+    refreshExtras();
+    $("#formMsg").textContent = "Image added. Save the card to keep the reference.";
+  } catch (err) { $("#formMsg").textContent = `Image not uploaded: ${err.message}`; }
+}
+for (const k of ["description", "verifyNotes"]) form[k].addEventListener("paste", onPaste);
+
+$("#phase").onchange = (e) => { phase = e.target.value; store.set("board.phase", phase); render(); };
+
+/* live reload */
+const es = new EventSource("/api/events");
+es.onmessage = () => load();
+es.onerror = () => { if (loaded) banner("Live updates disconnected. Reconnecting."); };
+es.onopen = () => { if (loaded) load(); };
+
+api("/api/info").then((i) => { $("#name").textContent = i.name; document.title = `${i.name} board`; columns = i.columns; }).catch(() => {}).finally(load);
+</script>
+</body>
+</html>
