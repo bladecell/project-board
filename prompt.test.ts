@@ -32,4 +32,15 @@ describe("buildPrompt", () => {
   test("odd titles do not throw", () => {
     for (const t of [undefined, null, "", 5, {}, " x\u0000y"]) expect(() => buildPrompt({ id: 1, title: t as never })).not.toThrow();
   });
+  test("unapproved columns get an investigate-only prompt", () => {
+    for (const column of ["inbox", "planned"]) {
+      const p = buildPrompt({ id: 5, title: "Idea", column });
+      expect(p.startsWith('Look at board card #5: "Idea". It is not approved yet.')).toBe(true);
+      expect(p).toContain("Do not claim it");
+      expect(p).not.toContain("claim_card");
+    }
+  });
+  test("todo and in-progress get the work prompt", () => {
+    for (const column of ["todo", "in-progress"]) expect(buildPrompt({ id: 5, title: "x", column }).startsWith('Work on board card #5: "x".')).toBe(true);
+  });
 });

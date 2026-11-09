@@ -6,7 +6,13 @@ export const promptTitle = (t) => {
   return s.length > maxTitle ? `${s.slice(0, maxTitle - 1).trimEnd()}…` : s;
 };
 
+const approved = new Set(["todo", "in-progress"]);
+
 export const buildPrompt = (card) => {
   const id = Number(card.id);
-  return `Work on board card #${id}: "${promptTitle(card.title)}". Read it with the board_show MCP tool (or run \`board show ${id}\`), claim it (claim_card / \`board start ${id}\`), follow the Board workflow in CLAUDE.md or AGENTS.md, and when finished move it to verify with notes on what you ran and the result. If there is anything I should check by hand, add it to the verify notes as \`- [ ]\` tick boxes, one per check. Do not move it to done.`;
+  const title = promptTitle(card.title);
+  if (approved.has(card.column) || card.column === undefined) {
+    return `Work on board card #${id}: "${title}". Read it with the board_show MCP tool (or run \`board show ${id}\`), claim it (claim_card / \`board start ${id}\`), follow the Board workflow in CLAUDE.md or AGENTS.md, and when finished move it to verify with notes on what you ran and the result. If there is anything I should check by hand, add it to the verify notes as \`- [ ]\` tick boxes, one per check. Do not move it to done.`;
+  }
+  return `Look at board card #${id}: "${title}". It is not approved yet. Read it with the board_show MCP tool (or run \`board show ${id}\`) and investigate: report what it involves, open questions, risks and a proposed plan. Do not claim it, do not change any files, and do not move it.`;
 };

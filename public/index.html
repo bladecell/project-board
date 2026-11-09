@@ -400,8 +400,8 @@ function cardEl(c) {
   const el = h("article", { className: "card", draggable: true, tabIndex: 0, role: "button", ariaLabel: `Open card ${c.id}: ${c.title}` },
     h("span", { className: "title", textContent: c.title }), meta);
   el.dataset.id = c.id;
-  if (c.column === "todo" || c.column === "in-progress") {
-    const b = h("button", { type: "button", className: "copy-card", title: "Copy prompt for an agent", ariaLabel: `Copy prompt for card ${c.id}` }, copyIcon());
+  if (c.column !== "done" && c.column !== "verify") {
+    const b = h("button", { type: "button", className: "copy-card", title: c.column === "todo" || c.column === "in-progress" ? "Copy prompt for an agent" : "Copy investigate prompt (card not approved)", ariaLabel: `Copy prompt for card ${c.id}` }, copyIcon());
     b.onclick = (e) => { e.stopPropagation(); copyPrompt(c); };
     b.onkeydown = (e) => e.stopPropagation();
     el.classList.add("has-copy");
