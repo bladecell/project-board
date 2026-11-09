@@ -103,12 +103,22 @@ header select { width: auto; min-width: 130px; }
 .ref { font-variant-numeric: tabular-nums; }
 .chip { padding: 0 6px; line-height: 18px; background: var(--line-soft); border-radius: 4px; max-width: 100%; overflow-wrap: anywhere; }
 .card { position: relative; }
-.card-act { position: absolute; top: 0; right: 0; width: 44px; height: 36px; min-height: 36px; padding: 0; display: grid; place-items: center; background: transparent; color: var(--muted); opacity: 0; }
-.card:hover .card-act, .card:focus-within .card-act, .card-act:focus-visible { opacity: 1; }
-.card-act:hover { background: transparent; color: var(--text); }
-@media (hover: none) { .card-act { opacity: 1; } }
-.card-act svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-@media (hover: none) { .card.has-copy .card-open { padding-right: 36px; } }
+.card-acts { position: absolute; top: 0; right: 0; display: flex; border-radius: 0 6px 0 6px; opacity: 0; }
+.card:hover .card-acts, .card:focus-within .card-acts { opacity: 1; background: var(--line-soft); }
+.card-act { width: 40px; height: 40px; min-height: 40px; padding: 0; display: grid; place-items: center; background: transparent; color: var(--muted); }
+.card-act:hover { background: var(--line); color: var(--text); }
+.card-act svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+@media (hover: none) { .card-acts { opacity: 1; background: none; } .card-act { width: 44px; height: 44px; min-height: 44px; } .card-open { padding-right: 88px; } }
+/* Glass: the Move popover, a floating layer above the board. Items are flat. */
+#movePop { margin: 0; inset: auto; min-width: 208px; max-width: calc(100vw - 16px); padding: 6px; border: 1px solid var(--g-border); border-radius: 16px; background: color-mix(in srgb, var(--g-solid) 92%, transparent); color: var(--g-text); box-shadow: var(--g-shadow); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); --focus: var(--g-primary); }
+@supports not (backdrop-filter: blur(1px)) { #movePop { background: var(--g-solid); } }
+#movePop p { margin: 0; padding: 6px 10px 4px; font-size: 12px; font-weight: 600; color: var(--g-muted); }
+#movePop ul { list-style: none; margin: 0; padding: 0; }
+#movePop button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 0 10px; background: transparent; border-radius: 8px; text-align: left; color: inherit; }
+#movePop button:hover:not(:disabled) { background: var(--line-soft); }
+#movePop button:focus-visible { outline-offset: -3px; }
+#movePop button:disabled { color: var(--g-muted); cursor: default; }
+#movePop .cur { font-size: 12px; }
 #toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 10; padding: 10px 14px; border-radius: 8px; background: var(--text); color: var(--bg); font-size: 13px; opacity: 0; pointer-events: none; }
 #toast.show { opacity: 1; }
 @media (prefers-reduced-motion: no-preference) { #toast { transition: opacity .15s; } }
@@ -225,6 +235,7 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
   </div>
 </header>
 <div id="banner" role="alert" hidden></div>
+<div id="movePop" popover role="group" aria-labelledby="movePopTitle"><p id="movePopTitle"></p><ul id="moveList"></ul></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <dialog id="promptDlg" aria-label="Prompt to copy"><form method="dialog"><p class="hint">Copy this with Ctrl+C, then paste it into your agent.</p><textarea id="promptText" readonly rows="6"></textarea><div class="actions"><button type="submit" class="primary">Close</button></div></form></dialog>
 <main id="board" aria-label="Kanban board"><p class="empty">Loading board</p></main>
@@ -377,6 +388,7 @@ function render() {
   while (board.children.length > els.length) board.lastElementChild.remove();
   for (const el of els) if (el._scroll) { el.querySelector(".list").scrollTop = el._scroll; el._scroll = 0; }
 
+  if (pop.matches(":popover-open") && !$(`.card[data-id="${movingId}"]`)) pop.hidePopover();
   if (focus && !board.contains(document.activeElement)) {
     if (focus.composer) { const t = $(".composer textarea"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
     else focusCard(focus.id, focus.act);
@@ -466,6 +478,8 @@ async function copyPrompt(c) {
 }
 const copyIcon = () => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("aria-hidden", "true"); s.innerHTML = '<rect x="5" y="5" width="8" height="8" rx="1.5"/><path d="M3 10.5V4a1 1 0 0 1 1-1h6.5"/>'; return s; };
 
+const moveIcon = () => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("aria-hidden", "true"); s.innerHTML = '<path d="M2.5 8h8M7.5 4.5 11 8l-3.5 3.5M13.5 3.5v9"/>'; return s; };
+
 function cardEl(c) {
   const showPhase = c.phase && c.phase.toLowerCase() !== "backlog";
   const ref = [`#${c.id}`, c.taskId].filter(Boolean).join(" · ");
@@ -479,18 +493,50 @@ function cardEl(c) {
   open.dataset.act = "open";
   const el = h("article", { className: "card", draggable: true }, open, meta);
   el.dataset.id = c.id;
+  const acts = h("div", { className: "card-acts" });
   if (c.column !== "done" && c.column !== "verify") {
     const b = h("button", { type: "button", className: "card-act", title: c.column === "todo" || c.column === "in-progress" ? "Copy prompt for an agent" : "Copy investigate prompt (card not approved)", ariaLabel: `Copy prompt for card ${c.id}` }, copyIcon());
     b.onclick = () => copyPrompt(c);
     b.dataset.act = "copy";
-    el.classList.add("has-copy");
-    el.append(b);
+    acts.append(b);
   }
+  const mv = h("button", { type: "button", className: "card-act", title: "Move to another column", ariaLabel: `Move card ${c.id}` }, moveIcon());
+  mv.onclick = () => openMove(c, mv);
+  mv.dataset.act = "move";
+  acts.append(mv);
+  el.append(acts);
   el.onclick = (e) => { if (!e.target.closest("button:not(.card-open)")) openCard(c.id); };
   el.ondragstart = (e) => { e.dataTransfer.setData("text/plain", String(c.id)); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); dragging = true; };
   el.ondragend = () => { el.classList.remove("dragging"); clearDrop(); dragging = false; if (renderPending) { renderPending = false; render(); } };
   return el;
 }
+
+const pop = $("#movePop");
+let movingId = null;
+function openMove(c, btn) {
+  movingId = c.id;
+  $("#movePopTitle").textContent = `Move #${c.id} to`;
+  $("#moveList").replaceChildren(...columns.map((col) => {
+    const b = h("button", { type: "button", disabled: col === c.column }, h("span", { textContent: labels[col] ?? col }), col === c.column && h("span", { className: "cur", textContent: "Current" }));
+    b.onclick = () => moveTo(c.id, col);
+    return h("li", {}, b);
+  }));
+  pop.showPopover({ source: btn });
+  const r = btn.getBoundingClientRect(), w = pop.offsetWidth, ph = pop.offsetHeight;
+  pop.style.left = `${Math.max(8, Math.min(r.right - w, innerWidth - w - 8))}px`;
+  pop.style.top = `${r.bottom + 4 + ph > innerHeight - 8 ? Math.max(8, r.top - ph - 4) : r.bottom + 4}px`;
+  pop.querySelector("button:not(:disabled)")?.focus();
+}
+async function moveTo(id, col) {
+  pop.hidePopover();
+  try {
+    await api(`/api/cards/${id}/move`, "POST", { column: col, before: null });
+    toast(`Moved #${id} to ${labels[col] ?? col}`);
+  } catch (err) { banner(err.message); }
+  await load();
+  focusCard(id, "move");
+}
+document.addEventListener("scroll", () => { if (pop.matches(":popover-open")) pop.hidePopover(); }, { capture: true, passive: true });
 
 const line = h("div", { className: "drop-line" });
 const clearDrop = () => { line.remove(); document.querySelectorAll(".over").forEach((e) => e.classList.remove("over")); };
