@@ -48,7 +48,7 @@ button.primary { background: var(--accent); color: var(--accent-text); font-weig
 button.primary:hover { filter: brightness(1.1); }
 button.danger { color: var(--block-text); }
 input:not([type=checkbox]), select, textarea { width: 100%; background: var(--line-soft); border: 0; border-radius: 6px; padding: 0 10px; }
-input:not([type=checkbox]):hover, select:hover, textarea:hover { background: var(--line); }
+input:not([type=checkbox]):hover, select:hover, textarea:hover { background-color: var(--line); }
 select { appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
 textarea { padding: 10px; min-height: 120px; resize: vertical; line-height: 1.45; }
 
@@ -122,6 +122,8 @@ header select { width: auto; min-width: 130px; }
 .add { display: flex; gap: 6px; }
 .add input { flex: 1; min-width: 0; background: transparent; }
 .add input:hover, .add input:focus { background: var(--card); }
+.add select.add-type { flex: none; width: auto; min-width: 0; padding: 0 24px 0 8px; background-color: transparent; background-position: right 8px center; color: var(--muted); }
+.add select.add-type:hover, .add select.add-type:focus { background-color: var(--card); color: var(--text); }
 .add button { background: transparent; color: var(--muted); }
 .add button:hover { background: var(--card); color: var(--text); }
 
@@ -274,6 +276,7 @@ let cards = [];
 let columns = Object.keys(labels);
 let phase = store.get("board.phase");
 let typeF = store.get("board.type") || "";
+let addType = ["bug", "feature", "task", "decision"].includes(store.get("board.addType")) ? store.get("board.addType") : "task";
 let needsOnly = false;
 let q = "";
 const matches = (c) => (!phase || c.phase === phase) && (!typeF || c.type === typeF) && (!needsOnly || c.needsYou) && (!q || `${c.title} ${c.taskId} ${c.description}`.toLowerCase().includes(q));
@@ -331,13 +334,16 @@ function columnEl(col) {
   const input = h("input", { placeholder: "Add a card", maxLength: 200, ariaLabel: `Add card to ${labels[col]}` });
   input.value = drafts[col] ?? "";
   input.oninput = () => { drafts[col] = input.value; };
-  const add = h("form", { className: "add" }, input, h("button", { type: "submit", textContent: "Add" }));
+  const kind = h("select", { className: "add-type", ariaLabel: `Type of the new card in ${labels[col]}` }, ...["bug", "feature", "task", "decision"].map((t) => h("option", { value: t, textContent: t[0].toUpperCase() + t.slice(1) })));
+  kind.value = addType;
+  kind.onchange = () => { addType = kind.value; store.set("board.addType", addType); document.querySelectorAll(".add-type").forEach((k) => { k.value = addType; }); };
+  const add = h("form", { className: "add" }, input, kind, h("button", { type: "submit", textContent: "Add" }));
   add.onsubmit = async (e) => {
     e.preventDefault();
     const title = input.value.trim();
     if (!title) return;
     try {
-      await api("/api/cards", "POST", { title, column: col, ...(phase && { phase }) });
+      await api("/api/cards", "POST", { title, column: col, type: addType, ...(phase && { phase }) });
       input.value = drafts[col] = "";
       await load();
       $(`.column[data-col="${col}"] .add input`)?.focus();
