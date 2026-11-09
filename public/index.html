@@ -8,6 +8,7 @@
 /* Reading: personal dev tool, calm kanban. ENERGY 1 / RHYTHM 1 / MOTION 1.
    System fonts: instant and offline. One accent (teal), amber and red only for the two flags. */
 :root {
+  --wall: url(/contour-light.svg);
   --bg: #f8fafc; --col: #eef2f7; --card: #ffffff; --line: #cbd5e1; --line-soft: #e2e8f0;
   --text: #0f172a; --muted: #475569; --accent: #2563eb; --accent-text: #ffffff;
   --need-bg: #fbe3a8; --need-text: #4d3000; --block-bg: #f8d3d3; --block-text: #7a1010;
@@ -21,6 +22,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
+    --wall: url(/contour-dark.svg);
     --bg: #0f172a; --col: #162036; --card: #1e293b; --line: #475569; --line-soft: #334155;
     --text: #e2e8f0; --muted: #a8b3c4; --accent: #60a5fa; --accent-text: #0b1220;
     --need-bg: #4d3c0e; --need-text: #ffdf9a; --block-bg: #5a2020; --block-text: #ffcdcd;
@@ -32,7 +34,7 @@
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--sans); min-height: 100dvh; display: flex; flex-direction: column; }
+body { margin: 0; background: var(--bg) var(--wall) center / cover fixed no-repeat; color: var(--text); font: 15px/1.45 var(--sans); min-height: 100dvh; display: flex; flex-direction: column; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button, select, input:not([type=checkbox]) { min-height: 44px; }
