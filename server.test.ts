@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { boardDir, createCard, initBoard } from "./lib";
+import { boardDir, createCard, initBoard, startAgent } from "./lib";
 import { startServer } from "./server";
 
 let root: string, srv: ReturnType<typeof startServer>, base: string;
@@ -123,5 +123,22 @@ describe("commit links", () => {
     const u = await put.json();
     expect(u).toMatchObject({ tasksDone: 2, tasksTotal: 3 });
     expect(u.history).toHaveLength(1);
+  });
+});
+
+describe("agent fields", () => {
+  test("list exposes agent, agentAt, agentLive; live info constant; PUT cannot set them", async () => {
+    const dir = boardDir(root);
+    const a = createCard(dir, { title: "live one" }, { by: "ui" });
+    const b = createCard(dir, { title: "stale one" }, { by: "ui" });
+    startAgent(dir, a.id, "sess1234", { by: "cli" });
+    startAgent(dir, b.id, "old12345", { by: "cli", now: new Date(Date.now() - 6 * 60 * 1000) });
+    const list = await (await fetch(`${base}/api/cards`)).json();
+    expect(list.find((c: any) => c.id === a.id)).toMatchObject({ agent: "sess1234", agentLive: true });
+    expect(list.find((c: any) => c.id === b.id)).toMatchObject({ agent: "old12345", agentLive: false });
+    expect(list.find((c: any) => c.id === b.id).agentAt).toMatch(/Z$/);
+    expect((await (await fetch(`${base}/api/info`)).json()).agentLiveMs).toBe(300000);
+    const put = await fetch(`${base}/api/cards/${a.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ agent: "x", blocked: true }) });
+    expect((await put.json()).agent).toBe("sess1234");
   });
 });

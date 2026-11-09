@@ -1,7 +1,7 @@
 import { mkdirSync, watch } from "node:fs";
 import { join } from "node:path";
 import { getCommits, linkCommits } from "./commits";
-import { taskCounts, atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
+import { taskCounts, isAgentLive, AGENT_LIVE_MS, atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
 
 const ui = { by: "ui" } as const;
 const maxJson = 1_000_000;
@@ -15,7 +15,7 @@ class HttpError extends Error {
 }
 
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: security });
-const publicCard = ({ file, ...c }: Card) => ({ ...c, ...taskCounts(c) });
+const publicCard = ({ file, ...c }: Card) => ({ ...c, ...taskCounts(c), agentLive: isAgentLive(c) });
 const maxCardCommits = 50;
 
 async function readBody(req: Request, max: number) {
@@ -71,7 +71,7 @@ export function startServer(dir: string, port: number, name: string) {
     if (m === "GET" && p === "/markdown.js") return new Response(Bun.file(join(import.meta.dir, "public/markdown.js")), { headers: { ...security, "content-type": "text/javascript; charset=utf-8" } });
     const bg = m === "GET" && p.match(/^\/contour-(light|dark)\.svg$/);
     if (bg) return new Response(Bun.file(join(import.meta.dir, `public/contour-${bg[1]}.svg`)), { headers: { ...security, "content-type": "image/svg+xml", "cache-control": "max-age=86400" } });
-    if (m === "GET" && p === "/api/info") return json({ name, columns });
+    if (m === "GET" && p === "/api/info") return json({ name, columns, agentLiveMs: AGENT_LIVE_MS });
     if (m === "GET" && p === "/api/cards") {
       const cards = sortCards(loadCards(dir));
       const links = linkCommits(await getCommits(dir), cards);

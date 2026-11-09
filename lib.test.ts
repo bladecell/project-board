@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, utimesSync, readFileSync, readdirSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  appendNotes, convertSubtasks, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
+  agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
   placeCard, serializeCard, slugify, updateCard, type Card,
 } from "./lib";
 
@@ -16,7 +16,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 const card = (o: Partial<Card>): Card => ({
   id: 1, file: "0001-a.md", column: "inbox", order: 1, type: "task", taskId: "", phase: "", lane: "",
   needsYou: false, blocked: false, title: "a", description: "", verifyNotes: "", howToVerify: "",
-  created: "", updated: "", history: [], ...o,
+  created: "", updated: "", history: [], agent: "", agentAt: "", ...o,
 });
 
 describe("card parse/serialize", () => {
@@ -47,7 +47,7 @@ Some body
       id: 12, file: "0012-fix.md", column: "verify", order: 3, type: "bug", taskId: "P2.3", phase: "P2", lane: "fw",
       needsYou: true, blocked: false, title: "Fix: the thing",
       description: "Some body\n![](images/a.png)", verifyNotes: "- ran it", howToVerify: "- [ ] one\n- [x] two",
-      created: "", updated: "", history: [],
+      created: "", updated: "", history: [], agent: "", agentAt: "",
     });
   });
 
@@ -382,5 +382,126 @@ describe("tasks in cards", () => {
     expect(readFileSync(file, "utf8")).toBe(before);
     expect(get(dir).description).toBe(first.description);
     expect(() => convertSubtasks(dir, 9, { by: "cli" })).toThrow();
+  });
+});
+
+describe("agent marker", () => {
+  const t0 = new Date("2026-11-09T21:40:12Z");
+  const at = (s: number) => new Date(t0.getTime() + s * 1000);
+  const setup = () => {
+    initBoard(root);
+    const dir = boardDir(root);
+    createCard(dir, { title: "a" }, { by: "ui", now: t0 });
+    createCard(dir, { title: "b" }, { by: "ui", now: t0 });
+    return dir;
+  };
+  const get = (dir: string, id = 1) => loadCards(dir).find((c) => c.id === id)!;
+
+  test("agent fields round trip and cards without them still parse", () => {
+    const c = card({ agent: "abc12345", agentAt: "2026-11-09T21:40:12Z" });
+    const out = serializeCard(c);
+    expect(out).toContain("agent: abc12345\nagentAt: 2026-11-09T21:40:12Z\n");
+    expect(parseCard(c.file, out)).toEqual(c);
+    expect(serializeCard(card({}))).not.toContain("agent");
+    expect(parseCard("0001-a.md", "---\ntitle: a\n---\n").agent).toBe("");
+  });
+
+  test("agentLabel keeps the first 8 characters, single line", () => {
+    expect(agentLabel("0123456789abcdef")).toBe("01234567");
+    expect(agentLabel("a\nb")).toBe("a b");
+    expect(agentLabel("")).toBe("");
+  });
+
+  test("start sets the marker with one history line and bumps updated; no column move", () => {
+    const dir = setup();
+    const c = startAgent(dir, 1, "0123456789", { by: "cli", now: at(60) });
+    expect(c).toMatchObject({ agent: "01234567", agentAt: "2026-11-09T21:41:12Z", column: "inbox", updated: "2026-11-09T21:41:12Z" });
+    expect(c.history.map((h) => [h.text, h.by])).toEqual([["created", "ui"], ["agent started", "cli"]]);
+    expect(get(dir)).toEqual(c);
+  });
+
+  test("restarting with the same label refreshes the heartbeat without a new event", () => {
+    const dir = setup();
+    startAgent(dir, 1, "abc", { by: "cli", now: at(0) });
+    const c = startAgent(dir, 1, "abc", { by: "cli", now: at(120) });
+    expect(c.history).toHaveLength(2);
+    expect(c.agentAt).toBe("2026-11-09T21:42:12Z");
+    expect(startAgent(dir, 1, "other", { by: "cli", now: at(130) }).history.at(-1)!.text).toBe("agent started");
+  });
+
+  test("stop clears the marker with one history line; stopping an idle card is a no-op", () => {
+    const dir = setup();
+    expect(stopAgent(dir, 1, { by: "cli", now: at(5) }).history).toHaveLength(1);
+    startAgent(dir, 1, "abc", { by: "cli", now: at(10) });
+    const c = stopAgent(dir, 1, { by: "cli", now: at(20) });
+    expect(c).toMatchObject({ agent: "", agentAt: "" });
+    expect(c.history.map((h) => h.text)).toEqual(["created", "agent started", "agent stopped"]);
+    expect(serializeCard(get(dir))).not.toContain("agent:");
+    expect(() => stopAgent(dir, 9, { by: "cli" })).toThrow();
+  });
+
+  test("touch refreshes only matching cards by 8-char prefix, no updated bump, no history", () => {
+    const dir = setup();
+    startAgent(dir, 1, "0123456789abcdef", { by: "cli", now: at(0) });
+    startAgent(dir, 2, "zzzzzzzz", { by: "cli", now: at(0) });
+    const before = get(dir);
+    expect(touchAgents(dir, "0123456789-a-different-tail", at(60))).toBe(1);
+    const after = get(dir);
+    expect(after.agentAt).toBe("2026-11-09T21:41:12Z");
+    expect(after.updated).toBe(before.updated);
+    expect(after.history).toEqual(before.history);
+    expect(get(dir, 2).agentAt).toBe("2026-11-09T21:40:12Z");
+    expect(touchAgents(dir, "nomatch0", at(70))).toBe(0);
+    expect(touchAgents(dir, "", at(70))).toBe(0);
+  });
+
+  test("frequent heartbeats are not rewritten", () => {
+    const dir = setup();
+    startAgent(dir, 1, "abc", { by: "cli", now: at(0) });
+    const file = join(dir, "cards", "0001-a.md");
+    const before = readFileSync(file, "utf8");
+    expect(touchAgents(dir, "abc", at(2))).toBe(0);
+    expect(readFileSync(file, "utf8")).toBe(before);
+    expect(touchAgents(dir, "abc", at(6))).toBe(1);
+  });
+
+  test("liveness window boundary", () => {
+    const c = card({ agent: "abc", agentAt: "2026-11-09T21:40:12Z" });
+    const base = Date.parse(c.agentAt);
+    expect(isAgentLive(c, new Date(base + AGENT_LIVE_MS - 1))).toBe(true);
+    expect(isAgentLive(c, new Date(base + AGENT_LIVE_MS))).toBe(false);
+    expect(isAgentLive(card({}), new Date(base))).toBe(false);
+    expect(isAgentLive(card({ agent: "abc" }), new Date(base))).toBe(false);
+    expect(AGENT_LIVE_MS).toBe(5 * 60 * 1000);
+  });
+
+  test("API-style patches cannot set the agent marker", () => {
+    const dir = setup();
+    const c = updateCard(dir, 1, { agent: "evil", agentAt: "2026-11-09T21:40:12Z", lane: "x" }, cli);
+    expect(c.agent).toBe("");
+  });
+});
+
+describe("init refreshes the workflow block", () => {
+  test("an outdated marked block is replaced in place, text around it kept", () => {
+    writeFileSync(join(root, "CLAUDE.md"), "# Proj\n\n<!-- project-board:start -->\n## Board workflow\nold text\n<!-- project-board:end -->\n\nafter me\n");
+    expect(initBoard(root).claude).toBe("updated");
+    const cm = readFileSync(join(root, "CLAUDE.md"), "utf8");
+    expect(cm).toContain(workflowBlock("board").trimEnd());
+    expect(cm).not.toContain("old text");
+    expect(cm.startsWith("# Proj\n\n")).toBe(true);
+    expect(cm.endsWith("\n\nafter me\n")).toBe(true);
+    expect(cm.match(/project-board:start/g)).toHaveLength(1);
+    expect(initBoard(root).claude).toBe("present");
+    expect(readFileSync(join(root, "CLAUDE.md"), "utf8")).toBe(cm);
+  });
+  test("block mentions start and stop", () => {
+    expect(workflowBlock("board")).toContain("board start <id>");
+    expect(workflowBlock("board")).toContain("board stop <id>");
+  });
+  test("a start marker without an end marker is left alone", () => {
+    writeFileSync(join(root, "CLAUDE.md"), "x\n<!-- project-board:start -->\nhand edited\n");
+    expect(initBoard(root).claude).toBe("present");
+    expect(readFileSync(join(root, "CLAUDE.md"), "utf8")).toBe("x\n<!-- project-board:start -->\nhand edited\n");
   });
 });

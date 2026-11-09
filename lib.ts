@@ -29,9 +29,11 @@ export type Card = {
   created: string;
   updated: string;
   history: HistoryEntry[];
+  agent: string;
+  agentAt: string;
 };
 
-export type Patch = Partial<Omit<Card, "id" | "file" | "order" | "created" | "updated" | "history">>;
+export type Patch = Partial<Omit<Card, "id" | "file" | "order" | "created" | "updated" | "history" | "agent" | "agentAt">>;
 
 const isColumn = (v: unknown): v is Column => columns.includes(v as Column);
 const isType = (v: unknown): v is CardType => types.includes(v as CardType);
@@ -103,6 +105,8 @@ export function parseCard(file: string, text: string): Card | null {
     created: validIso(meta.created),
     updated: validIso(meta.updated),
     history: parts.history.flatMap((l) => parseHistoryLine(l) ?? []).slice(-maxHistory),
+    agent: oneLine(meta.agent ?? "").slice(0, 40),
+    agentAt: meta.agent ? validIso(meta.agentAt) : "",
   };
 }
 
@@ -113,6 +117,7 @@ export function serializeCard(c: Card): string {
   if (c.lane) head.push(`lane: ${oneLine(c.lane)}`);
   if (c.created) head.push(`created: ${c.created}`);
   if (c.updated) head.push(`updated: ${c.updated}`);
+  if (c.agent) head.push(`agent: ${oneLine(c.agent)}`, ...(c.agentAt ? [`agentAt: ${c.agentAt}`] : []));
   head.push(`needsYou: ${c.needsYou}`, `blocked: ${c.blocked}`, `title: ${oneLine(c.title)}`);
   // a leading space keeps user text from being read back as a section heading
   const safe = (t: string) => t.trim().replace(/^(##\s+(?:verify notes|how to verify|history)\s*)$/gim, " $1");
@@ -258,7 +263,7 @@ export function createCard(dir: string, input: Record<string, unknown>, ctx: Ctx
   const base = applyPatch({
     id, file: "", column: "inbox", order: 0, type: "task", taskId: "", phase: "", lane: "",
     needsYou: false, blocked: false, title: "", description: "", verifyNotes: "", howToVerify: "",
-    created: "", updated: "", history: [],
+    created: "", updated: "", history: [], agent: "", agentAt: "",
   }, input);
   if (!base.title) throw new Error("title required");
   const card = stamp(null, { ...base, file: fileName(id, base.title), order: endOrder(cards, base.column) }, ctx);
@@ -304,7 +309,59 @@ export function deleteCard(dir: string, id: number) {
   unlinkSync(join(dir, "cards", c.file));
 }
 
+export const AGENT_LIVE_MS = 5 * 60 * 1000;
+const touchMinMs = 5000;
+export const agentLabel = (s: string) => oneLine(s).slice(0, 8);
+
+export const isAgentLive = (c: Pick<Card, "agent" | "agentAt">, now = new Date()) => {
+  const t = Date.parse(c.agentAt);
+  return !!c.agent && Number.isFinite(t) && now.getTime() - t < AGENT_LIVE_MS;
+};
+
+const findCard = (dir: string, id: number) => {
+  const c = loadCards(dir).find((x) => x.id === id);
+  if (!c) throw new Error(`no card ${id}`);
+  return c;
+};
+
+export function startAgent(dir: string, id: number, session: string, ctx: Ctx): Card {
+  const old = findCard(dir, id);
+  const agent = agentLabel(session) || "claude";
+  const at = iso(ctx.now ?? new Date());
+  const same = old.agent === agent;
+  const out: Card = same
+    ? { ...old, agentAt: at }
+    : { ...old, agent, agentAt: at, created: old.created || at, updated: at, history: [...old.history, { at, text: "agent started", by: ctx.by }].slice(-maxHistory) };
+  writeCard(dir, out);
+  return out;
+}
+
+export function stopAgent(dir: string, id: number, ctx: Ctx): Card {
+  const old = findCard(dir, id);
+  if (!old.agent) return old;
+  const at = iso(ctx.now ?? new Date());
+  const out: Card = { ...old, agent: "", agentAt: "", created: old.created || at, updated: at, history: [...old.history, { at, text: "agent stopped", by: ctx.by }].slice(-maxHistory) };
+  writeCard(dir, out);
+  return out;
+}
+
+// Heartbeat: refreshes agentAt only. Never touches updated or history, and skips writes within touchMinMs.
+export function touchAgents(dir: string, session: string, now = new Date()): number {
+  const label = agentLabel(session);
+  if (!label) return 0;
+  let n = 0;
+  for (const c of loadCards(dir)) {
+    if (c.agent !== label) continue;
+    const last = Date.parse(c.agentAt);
+    if (Number.isFinite(last) && now.getTime() - last < touchMinMs) continue;
+    writeCard(dir, { ...c, agentAt: iso(now) });
+    n++;
+  }
+  return n;
+}
+
 const start = "<!-- project-board:start -->";
+const end = "<!-- project-board:end -->";
 
 export const workflowBlock = (rel: string) => `${start}
 ## Board workflow
@@ -312,10 +369,10 @@ Work is tracked on a local kanban board (\`board\` command). Data lives in \`${r
 - Columns: inbox, planned, todo, in-progress, verify, done. Blocked is a flag, not a column.
 - Inbox -> Todo is the user's approval. Build only Todo items.
 - At the start of each session run \`board list todo\` and \`board list in-progress\`.
-- Move a card to in-progress when you start it. When done, move it to verify: \`board move <id> verify --notes "what ran + result"\`.
+- Move a card to in-progress when you start it, then run \`board start <id>\`. When done, move it to verify with \`board move <id> verify --notes "what ran + result"\` and run \`board stop <id>\`.
 - Only the user moves cards to done.
 - Add new items you find with \`board add "title"\`; they land in inbox. Use \`--needs-you\` for unsure items and decisions.
-<!-- project-board:end -->
+${end}
 `;
 
 export function isIgnored(gitignore: string, rel: string) {
@@ -323,7 +380,7 @@ export function isIgnored(gitignore: string, rel: string) {
   return gitignore.split(/\r?\n/).some((l) => parents.includes(l.trim().replace(/^\/+|\/+$/g, "")));
 }
 
-export type InitResult = { dir: string; gitignore: "added" | "already"; claude: "appended" | "present" | "missing" };
+export type InitResult = { dir: string; gitignore: "added" | "already"; claude: "appended" | "updated" | "present" | "missing" };
 
 export function initBoard(root: string): InitResult {
   const dir = boardDir(root);
@@ -343,8 +400,18 @@ export function initBoard(root: string): InitResult {
   let claude: InitResult["claude"] = "missing";
   if (existsSync(cmPath)) {
     const cm = readFileSync(cmPath, "utf8");
-    if (cm.includes(start)) claude = "present";
-    else {
+    const s = cm.indexOf(start);
+    const e = s >= 0 ? cm.indexOf(end, s) : -1;
+    if (s >= 0) {
+      claude = "present";
+      if (e >= 0) {
+        const next = `${cm.slice(0, s)}${workflowBlock(rel).trimEnd()}${cm.slice(e + end.length)}`;
+        if (next !== cm) {
+          writeFileSync(cmPath, next);
+          claude = "updated";
+        }
+      }
+    } else {
       appendFileSync(cmPath, `${cm.endsWith("\n") ? "" : "\n"}\n${workflowBlock(rel)}`);
       claude = "appended";
     }

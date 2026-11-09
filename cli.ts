@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import {
-  boardDir, boardRel, columns, convertSubtasks, createCard, hasBoard, initBoard, loadCards, moveCard, serializeCard, sortCards, types,
+  boardDir, boardRel, columns, convertSubtasks, createCard, hasBoard, initBoard, isAgentLive, loadCards, moveCard, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
   type Card,
 } from "./lib";
 import { getCommits, linkCommits } from "./commits";
@@ -14,6 +14,9 @@ board add "title" [--type bug|feature|task|decision] [--column inbox] [--task P2
 board move <id> <column> [--notes "what ran + result"]
 board list [column]        one line per card (done is hidden unless asked for)
 board show <id>
+board start <id> [--session label]  mark an agent as working on the card (no column move)
+board stop <id>            clear the agent marker
+board touch                heartbeat for a Claude Code hook (reads hook JSON on stdin, silent)
 board subtasks <id>         turn plain list items in the description into - [ ] subtasks
 options: --dir <project root> (default cwd), --port <n> (default 4747), --no-open
 columns: ${columns.join(", ")}`;
@@ -24,12 +27,18 @@ const { values, positionals } = parseArgs({
   options: {
     dir: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" },
     type: { type: "string" }, column: { type: "string" }, task: { type: "string" }, phase: { type: "string" },
-    lane: { type: "string" }, "needs-you": { type: "boolean" }, blocked: { type: "boolean" }, notes: { type: "string" },
+    lane: { type: "string" }, "needs-you": { type: "boolean" }, blocked: { type: "boolean" }, notes: { type: "string" }, session: { type: "string" },
     help: { type: "boolean", short: "h" },
   },
 });
 const [cmd, ...args] = positionals;
-const root = resolve(values.dir ?? process.cwd());
+const findRoot = (from: string) => {
+  for (let d = from; ; d = dirname(d)) {
+    if (hasBoard(d)) return d;
+    if (dirname(d) === d) return from;
+  }
+};
+const root = values.dir !== undefined || cmd === "init" ? resolve(values.dir ?? process.cwd()) : findRoot(process.cwd());
 
 const fail = (msg: string): never => { console.error(`board: ${msg}`); process.exit(1); };
 const need = () => (hasBoard(root) ? boardDir(root) : fail("no board here. Run `board init` first."));
@@ -38,9 +47,39 @@ const cardId = (s: string | undefined) => {
   return Number.isSafeInteger(id) ? id : fail(`invalid card id "${s}"`);
 };
 const column = (s: string) => (columns as readonly string[]).includes(s) ? s as (typeof columns)[number] : fail(`unknown column "${s}" (${columns.join(", ")})`);
+const age = (iso: string) => {
+  const m = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000));
+  return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
+};
+const agentNote = (c: Card) => (c.agent ? `agent:${c.agent} ${isAgentLive(c) ? "live" : "idle"} ${c.agentAt ? age(c.agentAt) : ""}`.trim() : "");
 const line = (c: Card) =>
   [String(c.id).padStart(4, "0"), c.column.padEnd(11), c.type.padEnd(8), (c.taskId || "-").padEnd(6),
-    [c.needsYou && "needs-you", c.blocked && "blocked"].filter(Boolean).join(",") || "-", c.title].join("  ");
+    [c.needsYou && "needs-you", c.blocked && "blocked"].filter(Boolean).join(",") || "-", c.title, agentNote(c)].filter((p, i, a) => p || i < a.length - 1).join("  ");
+
+// Hook heartbeat: bounded stdin, never blocks on a TTY, never prints, always exits 0.
+async function touch() {
+  try {
+    if (process.stdin.isTTY || !hasBoard(root)) return;
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    const reader = Bun.stdin.stream().getReader();
+    const timer = setTimeout(() => reader.cancel().catch(() => {}), 2000);
+    try {
+      while (size <= 65536) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        size += value.length;
+      }
+    } finally {
+      clearTimeout(timer);
+      reader.cancel().catch(() => {});
+    }
+    if (size > 65536) return;
+    const j = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    if (typeof j?.session_id === "string") touchAgents(boardDir(root), j.session_id);
+  } catch {}
+}
 
 async function serve() {
   const dir = need();
@@ -63,12 +102,13 @@ async function serve() {
 
 try {
   if (values.help || cmd === "help") console.log(usage);
+  else if (cmd === "touch") await touch();
   else if (!cmd || cmd === "serve") await serve();
   else if (cmd === "init") {
     const r = initBoard(root);
     console.log(`board dir: ${r.dir}`);
     console.log(r.gitignore === "added" ? ".gitignore: added board path" : ".gitignore: already ignored");
-    console.log({ appended: "CLAUDE.md: appended Board workflow block", present: "CLAUDE.md: block already present", missing: "CLAUDE.md: not found, no workflow block added" }[r.claude]);
+    console.log({ appended: "CLAUDE.md: appended Board workflow block", updated: "CLAUDE.md: updated Board workflow block", present: "CLAUDE.md: block already present", missing: "CLAUDE.md: not found, no workflow block added" }[r.claude]);
     console.log(`start it with: board${root === process.cwd() ? "" : ` --dir ${root}`}`);
   } else if (cmd === "add") {
     const title = args.join(" ").trim();
@@ -83,6 +123,11 @@ try {
   } else if (cmd === "move") {
     if (args.length < 2) fail("usage: board move <id> <column> [--notes ...]");
     console.log(line(moveCard(need(), cardId(args[0]), column(args[1]), null, values.notes, { by: "cli" })));
+  } else if (cmd === "start") {
+    const c = startAgent(need(), cardId(args[0]), values.session ?? (process.env.CLAUDE_SESSION_ID || "claude"), { by: "cli" });
+    console.log(line(c));
+  } else if (cmd === "stop") {
+    console.log(line(stopAgent(need(), cardId(args[0]), { by: "cli" })));
   } else if (cmd === "list") {
     const col = args[0] ? column(args[0]) : null;
     const cards = sortCards(loadCards(need())).filter((c) => (col ? c.column === col : c.column !== "done"));
@@ -98,6 +143,7 @@ try {
     const id = cardId(args[0]);
     const c = loadCards(dir).find((x) => x.id === id) ?? fail(`no card ${id}`);
     console.log(`# ${join(dir, "cards", c.file)}\n${serializeCard(c)}`);
+    if (c.agent) console.log(`\nAgent ${c.agent}: ${isAgentLive(c) ? "working" : "idle"}, last heartbeat ${c.agentAt ? `${age(c.agentAt)} ago` : "unknown"}`);
     const linked = linkCommits(await getCommits(dir), [c]).get(id) ?? [];
     if (linked.length) console.log(`\nCommits (${linked.length}${linked.length > 50 ? ", newest 50" : ""})\n${linked.slice(0, 50).map((k) => `${k.short}  ${k.at.slice(0, 10)}  ${k.subject}`).join("\n")}`);
   } else fail(`unknown command "${cmd}"\n${usage}`);

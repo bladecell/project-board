@@ -96,6 +96,13 @@ header select { width: auto; min-width: 130px; }
 .pill.decision { background: var(--t-decision-bg); color: var(--t-decision); }
 .ref { font-variant-numeric: tabular-nums; }
 .chip { padding: 0 6px; line-height: 16px; background: var(--line-soft); border-radius: 4px; max-width: 100%; overflow-wrap: anywhere; }
+.agent { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; line-height: 18px; padding: 0 6px; border-radius: 4px; background: var(--line-soft); color: var(--muted); }
+.agent .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .55; flex: none; }
+.agent.live { color: var(--accent); font-weight: 600; }
+.agent.live .dot { opacity: 1; }
+#dlgAgent { margin: 0 0 8px; }
+@media (prefers-reduced-motion: no-preference) { .agent.live .dot { animation: agent-pulse 2.4s ease-in-out infinite; } }
+@keyframes agent-pulse { 50% { opacity: .3; } }
 .flag { font-size: 12px; font-weight: 600; line-height: 18px; padding: 0 6px; border-radius: 4px; }
 .flag.need { background: var(--need-bg); color: var(--need-text); }
 .flag.block { background: var(--block-bg); color: var(--block-text); }
@@ -188,6 +195,7 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 
 <dialog id="dlg" aria-labelledby="dlgTitle">
   <form id="form" method="dialog">
+    <div id="dlgAgent" hidden></div>
     <label class="f"><span id="dlgTitle">Title</span><input name="title" required maxlength="200"></label>
     <div class="row">
       <label class="f"><span>Column</span><select name="column"></select></label>
@@ -275,7 +283,7 @@ async function load() {
     cards = await api("/api/cards");
     loaded = true;
     banner("");
-    if (openId !== null) renderLog();
+    if (openId !== null) { renderLog(); renderAgent(); }
   } catch (e) {
     banner(`Could not load cards: ${e.message}. Retrying when the server is back.`);
   }
@@ -334,12 +342,22 @@ const age = (iso) => {
   return "now";
 };
 
+let agentLiveMs = 300000;
+const agentLive = (c) => !!c.agent && Date.now() - Date.parse(c.agentAt) < agentLiveMs;
+function agentChip(c) {
+  if (!c.agent) return null;
+  const live = agentLive(c);
+  const ago = c.agentAt ? age(c.agentAt) : "";
+  return h("span", { className: `agent${live ? " live" : ""}`, title: `Session ${c.agent}${c.agentAt ? `, last heartbeat ${when(c.agentAt)}` : ""}` },
+    h("span", { className: "dot", ariaHidden: "true" }), h("span", { textContent: live ? "Claude working" : `Claude idle ${ago}`.trim() }));
+}
+
 function cardEl(c) {
   const showPhase = c.phase && c.phase.toLowerCase() !== "backlog";
   const ref = [`#${c.id}`, c.taskId].filter(Boolean).join(" · ");
   const meta = h("div", { className: "meta" }, h("span", { className: `pill ${typeList.includes(c.type) ? c.type : "task"}`, textContent: c.type }),
     h("span", { className: "ref", textContent: ref }), showPhase && h("span", { className: "chip", textContent: c.phase }), c.lane && h("span", { className: "chip", textContent: c.lane }),
-    c.needsYou && h("span", { className: "flag need", textContent: "Needs you" }), c.blocked && h("span", { className: "flag block", textContent: "Blocked" }),
+    agentChip(c), c.needsYou && h("span", { className: "flag need", textContent: "Needs you" }), c.blocked && h("span", { className: "flag block", textContent: "Blocked" }),
     c.tasksTotal > 0 && h("span", { className: `tasks-n${c.tasksDone === c.tasksTotal ? " full" : ""}`, textContent: `${c.tasksDone}/${c.tasksTotal}`, title: `${c.tasksDone} of ${c.tasksTotal} subtasks done` }),
     c.commitCount > 0 && h("span", { className: "commits-n", textContent: `${c.commitCount} ${c.commitCount === 1 ? "commit" : "commits"}` }),
     c.updated && h("span", { className: "age", textContent: age(c.updated), title: `Updated ${when(c.updated)}` }));
@@ -401,10 +419,18 @@ function openCard(id) {
   $("#formMsg").textContent = "";
   for (const k of fieldKeys) setMode(k, !c[k].trim());
   renderLog();
+  renderAgent();
   $("#commitsBox").hidden = true;
   api(`/api/cards/${id}`).then((d) => { if (openId === id) renderCommits(d.commits); }).catch(() => {});
   dlg.showModal();
   form.title.focus();
+}
+
+function renderAgent() {
+  const c = cards.find((x) => x.id === openId);
+  const chip = c && agentChip(c);
+  $("#dlgAgent").hidden = !chip;
+  $("#dlgAgent").replaceChildren(...(chip ? [chip] : []));
 }
 
 function renderCommits(list = []) {
@@ -514,11 +540,13 @@ $("#phase").onchange = (e) => { phase = e.target.value; store.set("board.phase",
 
 /* live reload */
 const es = new EventSource("/api/events");
-es.onmessage = () => load();
+let reloadT;
+es.onmessage = () => { clearTimeout(reloadT); reloadT = setTimeout(load, 300); };
 es.onerror = () => { if (loaded) banner("Live updates disconnected. Reconnecting."); };
 es.onopen = () => { if (loaded) load(); };
 
-api("/api/info").then((i) => { $("#name").textContent = i.name; document.title = `${i.name} board`; columns = i.columns; }).catch(() => {}).finally(load);
+api("/api/info").then((i) => { $("#name").textContent = i.name; document.title = `${i.name} board`; columns = i.columns; if (i.agentLiveMs) agentLiveMs = i.agentLiveMs; }).catch(() => {}).finally(load);
+setInterval(() => { if (document.hidden) return; if (cards.some((c) => c.agent)) { render(); if (dlg.open) renderAgent(); } }, 30000);
 </script>
 </body>
 </html>

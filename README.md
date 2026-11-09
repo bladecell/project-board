@@ -20,6 +20,8 @@ board add "title" --type bug --task P2.3 --phase P2 --lane fw --needs-you [--col
 board move 7 verify --notes "ran tests, all green"
 board list [column]             # one line per card; done is hidden unless named
 board show 7
+board start 7 [--session label] # mark an agent as working on card 7 (no column move)
+board stop 7                    # clear the marker
 board subtasks 7                # plain list items in the description become - [ ] subtasks (idempotent)
 ```
 
@@ -29,6 +31,30 @@ Card text renders as markdown in the card panel (headings, lists, task checkboxe
 
 Options: `--dir <project root>` (default cwd), `--port <n>`, `--no-open`.
 The server binds 127.0.0.1 only. Drag cards between columns, paste screenshots into a card body, edit everything in the detail panel. The board reloads when files change. Drag and drop needs a mouse; on touch use the Column field in the card panel.
+
+## Live agent indicator
+
+A card shows "Claude working" with a pulsing dot while an agent holds it, and "Claude idle 12m" once its heartbeat is older than 5 minutes. The marker is `agent` and `agentAt` in the card frontmatter. `board start <id>` sets it (label from `--session`, else `CLAUDE_SESSION_ID`, else `claude`; first 8 characters kept) and adds a history line "agent started"; `board stop <id>` clears it and adds "agent stopped". Neither moves the card. The heartbeat, `board touch`, only rewrites `agentAt`: no `updated` bump, no history, at most one write per 5 s. It reads the Claude Code hook JSON on stdin (64 KB cap), matches `session_id` by its first 8 characters against cards' labels, prints nothing and always exits 0.
+
+To keep the heartbeat fresh, add this to your Claude Code `settings.json` (user or project). Nothing edits it for you:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "board touch", "timeout": 5, "async": true }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "board touch", "timeout": 5, "async": true }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "board touch", "timeout": 5, "async": true }] }
+    ]
+  }
+}
+```
+
+Start the card with `--session` set to the session id (or export `CLAUDE_SESSION_ID`), otherwise the label `claude` never matches a hook's `session_id`. `board init` refreshes the Board workflow block in CLAUDE.md between its markers, so older projects pick up the `start`/`stop` lines by running it again.
 
 ## Data
 

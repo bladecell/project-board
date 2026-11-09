@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -41,4 +41,49 @@ test("subtasks converts the description and is idempotent", () => {
   expect(shown).toContain("- [ ] one\n- [ ] two");
   expect(shown).toMatch(/· converted list to subtasks · cli$/m);
   expect(board("subtasks", id)).toContain("nothing to convert");
+});
+
+describe("agent commands", () => {
+  const run = (stdin: string | undefined, ...a: string[]) => {
+    const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a], { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
+    return { out: r.stdout.toString(), err: r.stderr.toString(), code: r.exitCode };
+  };
+  const agentOf = () => /^agent: (.*)$/m.exec(board("show", "1"))?.[1];
+
+  test("start, touch by hook payload prefix, show, stop", () => {
+    board("start", "1", "--session", "abcdef123456");
+    expect(agentOf()).toBe("abcdef12");
+    expect(board("show", "1")).toMatch(/· agent started · cli$/m);
+    expect(board("list")).toContain("agent:abcdef12");
+    const t = run(JSON.stringify({ session_id: "abcdef12-9999-aaaa", hook_event_name: "Stop" }), "touch");
+    expect(t).toEqual({ out: "", err: "", code: 0 });
+    expect(board("stop", "1")).toContain("0001");
+    expect(agentOf()).toBeUndefined();
+    expect(board("show", "1")).toMatch(/· agent stopped · cli$/m);
+  });
+
+  test("touch never fails or prints: garbage, empty, oversized, no stdin, no board", () => {
+    board("start", "1", "--session", "keepme01");
+    for (const input of ["not json", "", "[1,2]", "null", JSON.stringify({ session_id: 42 }), "x".repeat(300_000), JSON.stringify({ session_id: "nomatch00" })]) {
+      expect(run(input, "touch")).toEqual({ out: "", err: "", code: 0 });
+    }
+    expect(run(undefined, "touch")).toEqual({ out: "", err: "", code: 0 });
+    expect(Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", join(root, "missing"), "touch"], { stdin: "ignore" }).exitCode).toBe(0);
+    expect(agentOf()).toBe("keepme01");
+  });
+
+  test("start without --session uses CLAUDE_SESSION_ID, then claude", () => {
+    board("stop", "1");
+    Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, "start", "1"], { env: { ...process.env, CLAUDE_SESSION_ID: "envid12345" } });
+    expect(agentOf()).toBe("envid123");
+    board("stop", "1");
+    Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, "start", "1"], { env: { ...process.env, CLAUDE_SESSION_ID: "" } });
+    expect(agentOf()).toBe("claude");
+  });
+
+  test("commands find the board from a subdirectory", () => {
+    mkdirSync(join(root, "sub/deep"), { recursive: true });
+    const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "list"], { cwd: join(root, "sub/deep") });
+    expect(r.stdout.toString()).toContain("0001");
+  });
 });
