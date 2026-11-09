@@ -36,12 +36,14 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button, select, input:not([type=checkbox]) { min-height: 44px; }
-button { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 0 14px; }
-button:hover { border-color: var(--muted); }
-button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button { cursor: pointer; border: 0; background: var(--line-soft); border-radius: 6px; padding: 0 14px; }
+button:hover { background: var(--line); }
+button.primary { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 button.primary:hover { filter: brightness(1.1); }
 button.danger { color: var(--block-text); }
-input:not([type=checkbox]), select, textarea { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; }
+input:not([type=checkbox]), select, textarea { width: 100%; background: var(--line-soft); border: 0; border-radius: 6px; padding: 0 10px; }
+input:not([type=checkbox]):hover, select:hover, textarea:hover { background: var(--line); }
+select { appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
 textarea { padding: 10px; min-height: 120px; resize: vertical; line-height: 1.45; }
 
 header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
@@ -76,10 +78,10 @@ header select { width: auto; min-width: 160px; }
 .flag.block { background: var(--block-bg); color: var(--block-text); }
 .drop-line { height: 3px; border-radius: 2px; background: var(--accent); flex: none; }
 .add { display: flex; gap: 6px; }
-.add input { flex: 1; min-width: 0; background: transparent; border-color: transparent; }
-.add input:hover, .add input:focus { background: var(--card); border-color: var(--line); }
-.add button { background: transparent; border-color: transparent; color: var(--muted); }
-.add button:hover { background: var(--card); border-color: var(--line); color: var(--text); }
+.add input { flex: 1; min-width: 0; background: transparent; }
+.add input:hover, .add input:focus { background: var(--card); }
+.add button { background: transparent; color: var(--muted); }
+.add button:hover { background: var(--card); color: var(--text); }
 
 /* Glass: only the detail dialog. Everything else stays flat. */
 dialog { width: min(680px, 100vw); max-height: 100dvh; margin: auto; padding: 0; border: 1px solid var(--g-border); border-radius: 16px; background: var(--g-surface); color: var(--g-text); box-shadow: var(--g-shadow); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); --focus: var(--g-primary); }
