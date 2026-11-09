@@ -8,18 +8,24 @@
 /* Reading: personal dev tool, calm kanban. ENERGY 1 / RHYTHM 1 / MOTION 1.
    System fonts: instant and offline. One accent (teal), amber and red only for the two flags. */
 :root {
-  --bg: #f3f4f6; --col: #e6e9ee; --card: #fff; --line: #c9ced6;
-  --text: #1a1e24; --muted: #505a68; --accent: #0b6b5f; --accent-text: #fff;
+  --bg: #f4f5f7; --col: #e8ebef; --card: #fff; --line: #cfd4db; --line-soft: #dde1e7;
+  --text: #1a1e24; --muted: #566070; --accent: #0b6b5f; --accent-text: #fff;
   --need-bg: #fbe3a8; --need-text: #4d3000; --block-bg: #f8d3d3; --block-text: #7a1010;
+  --t-bug-bg: #f6dcd8; --t-bug: #7a2418; --t-feature-bg: #d6ebe6; --t-feature: #0b5148;
+  --t-task-bg: #e3e6eb; --t-task: #36404e; --t-decision-bg: #e6def2; --t-decision: #46307a;
+  --shadow: 0 1px 2px rgb(20 24 30 / .08);
   --focus: #0b6b5f; --scrim: rgb(20 24 30 / .55);
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #12151a; --col: #1b1f26; --card: #272c35; --line: #3d4451;
+    --bg: #12151a; --col: #1a1e25; --card: #262b34; --line: #3d4451; --line-soft: #303642;
     --text: #e8eaee; --muted: #a6afbc; --accent: #4fd1c0; --accent-text: #08201c;
     --need-bg: #4d3c0e; --need-text: #ffdf9a; --block-bg: #5a2020; --block-text: #ffcdcd;
+    --t-bug-bg: #4a2723; --t-bug: #ffc9c0; --t-feature-bg: #1c4440; --t-feature: #a8eadf;
+    --t-task-bg: #353c48; --t-task: #cfd6e0; --t-decision-bg: #3b2f55; --t-decision: #d9cbf5;
+    --shadow: none;
     --focus: #4fd1c0; --scrim: rgb(0 0 0 / .65);
   }
 }
@@ -29,7 +35,9 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var
 button, input, select, textarea { font: inherit; color: inherit; }
 button, select, input:not([type=checkbox]) { min-height: 44px; }
 button { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 6px; padding: 0 14px; }
+button:hover { border-color: var(--muted); }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+button.primary:hover { filter: brightness(1.08); }
 button.danger { color: var(--block-text); }
 input:not([type=checkbox]), select, textarea { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 0 10px; }
 textarea { padding: 10px; min-height: 120px; resize: vertical; line-height: 1.45; }
@@ -42,28 +50,40 @@ header select { width: auto; min-width: 160px; }
 #banner[hidden] { display: none; }
 
 #board { flex: 1; display: flex; gap: 12px; padding: 16px; overflow-x: auto; align-items: flex-start; scroll-snap-type: x proximity; }
-.column { flex: 0 0 280px; max-width: 86vw; background: var(--col); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; max-height: calc(100dvh - 110px); }
-.column h2 { margin: 2px 4px; font-size: 14px; display: flex; justify-content: space-between; }
-.column h2 .count { color: var(--muted); font-weight: 400; }
+.column { flex: 0 0 292px; max-width: 86vw; background: var(--col); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; max-height: calc(100dvh - 110px); }
+.column h2 { margin: 4px 6px 0; font-size: 13px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; }
+.column h2 .count { color: var(--muted); font-weight: 400; font-size: 13px; font-variant-numeric: tabular-nums; }
 .column.over { outline: 2px dashed var(--accent); outline-offset: -2px; }
-.list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; min-height: 24px; padding: 2px; }
+.list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 24px; padding: 2px; }
 .empty { color: var(--muted); padding: 6px 4px; margin: 0; }
-.card { flex: none; background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; cursor: grab; display: flex; flex-direction: column; gap: 6px; min-height: 44px; }
+.card { flex: none; background: var(--card); border: 1px solid var(--line-soft); border-radius: 6px; padding: 8px 10px; cursor: grab; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow); }
+.card:hover { border-color: var(--muted); }
 .card.dragging { opacity: .4; }
-.card .title { font-weight: 600; overflow-wrap: anywhere; }
-.meta { display: flex; flex-wrap: wrap; gap: 4px 10px; color: var(--muted); font-size: 13px; }
-.meta .id { font-family: var(--mono); }
-.flags { display: flex; gap: 6px; flex-wrap: wrap; }
-.flag { font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 4px; }
+.card .title { font-size: 14px; font-weight: 500; line-height: 1.35; overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: 12px; color: var(--muted); }
+.meta:empty { display: none; }
+.pill { padding: 0 6px; border-radius: 4px; font-weight: 600; line-height: 18px; }
+.pill.bug { background: var(--t-bug-bg); color: var(--t-bug); }
+.pill.feature { background: var(--t-feature-bg); color: var(--t-feature); }
+.pill.task { background: var(--t-task-bg); color: var(--t-task); }
+.pill.decision { background: var(--t-decision-bg); color: var(--t-decision); }
+.ref { font-variant-numeric: tabular-nums; }
+.chip { padding: 0 6px; line-height: 16px; border: 1px solid var(--line); border-radius: 4px; max-width: 100%; overflow-wrap: anywhere; }
+.flag { font-size: 12px; font-weight: 600; line-height: 18px; padding: 0 6px; border-radius: 4px; }
 .flag.need { background: var(--need-bg); color: var(--need-text); }
 .flag.block { background: var(--block-bg); color: var(--block-text); }
 .drop-line { height: 3px; border-radius: 2px; background: var(--accent); flex: none; }
 .add { display: flex; gap: 6px; }
-.add input { flex: 1; min-width: 0; }
+.add input { flex: 1; min-width: 0; background: transparent; border-color: transparent; }
+.add input:hover, .add input:focus { background: var(--card); border-color: var(--line); }
+.add button { background: transparent; border-color: transparent; color: var(--muted); }
+.add button:hover { background: var(--card); border-color: var(--line); color: var(--text); }
 
 dialog { width: min(680px, 100vw); max-height: 100dvh; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); }
 dialog::backdrop { background: var(--scrim); }
-dialog form { padding: 16px; display: grid; gap: 14px; }
+dialog form { padding: 20px; display: grid; gap: 16px; }
+#dlgTitle { font-size: 12px; font-weight: 600; letter-spacing: .02em; }
+.actions { padding-top: 12px; border-top: 1px solid var(--line-soft); }
 .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 label.f { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 label.f > :not(span) { color: var(--text); font-size: 15px; }
@@ -201,12 +221,13 @@ function columnEl(col) {
 }
 
 function cardEl(c) {
-  const meta = h("div", { className: "meta" }, h("span", { className: "id", textContent: `#${c.id}` }), h("span", { textContent: c.type }),
-    c.taskId && h("span", { className: "id", textContent: c.taskId }), c.phase && h("span", { textContent: c.phase }), c.lane && h("span", { textContent: c.lane }));
-  const flags = (c.needsYou || c.blocked) && h("div", { className: "flags" },
+  const showPhase = c.phase && c.phase.toLowerCase() !== "backlog";
+  const ref = [`#${c.id}`, c.taskId].filter(Boolean).join(" · ");
+  const meta = h("div", { className: "meta" }, h("span", { className: `pill ${typeList.includes(c.type) ? c.type : "task"}`, textContent: c.type }),
+    h("span", { className: "ref", textContent: ref }), showPhase && h("span", { className: "chip", textContent: c.phase }), c.lane && h("span", { className: "chip", textContent: c.lane }),
     c.needsYou && h("span", { className: "flag need", textContent: "Needs you" }), c.blocked && h("span", { className: "flag block", textContent: "Blocked" }));
   const el = h("article", { className: "card", draggable: true, tabIndex: 0, role: "button", ariaLabel: `Open card ${c.id}: ${c.title}` },
-    h("span", { className: "title", textContent: c.title }), meta, flags);
+    h("span", { className: "title", textContent: c.title }), meta);
   el.dataset.id = c.id;
   el.onclick = () => openCard(c.id);
   el.onkeydown = (e) => { if (e.target === el && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); openCard(c.id); } };
