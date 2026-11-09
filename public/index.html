@@ -110,7 +110,7 @@ header select { width: auto; min-width: 130px; }
 dialog { width: min(680px, 100vw); max-height: 100dvh; margin: auto; padding: 0; border: 1px solid var(--g-border); border-radius: 16px; background: var(--g-surface); color: var(--g-text); box-shadow: var(--g-shadow); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); --focus: var(--g-primary); }
 @supports not (backdrop-filter: blur(1px)) { dialog { background: var(--g-solid); } }
 dialog label.f { color: var(--g-muted); }
-dialog label.f > :not(span), dialog .todo-list label, dialog .checks label { color: var(--g-text); }
+dialog label.f > :not(span), dialog .checks label { color: var(--g-text); }
 dialog input[type=checkbox] { accent-color: var(--g-primary); }
 dialog .hint { color: var(--g-muted); }
 dialog button.danger { color: var(--block-text); }
@@ -124,10 +124,6 @@ label.f > :not(span) { color: var(--text); font-size: 15px; }
 .checks { display: flex; gap: 20px; flex-wrap: wrap; }
 .checks label { display: flex; align-items: center; gap: 8px; min-height: 44px; }
 input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
-.imgs { display: flex; flex-wrap: wrap; gap: 8px; }
-.imgs img { max-width: 100%; max-height: 240px; border-radius: 6px; border: 1px solid var(--line); }
-.todo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.todo-list label { display: flex; align-items: center; gap: 10px; min-height: 44px; color: var(--text); font-size: 15px; }
 .actions { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
 .actions div { display: flex; gap: 8px; }
 .age { margin-left: auto; font-variant-numeric: tabular-nums; }
@@ -139,6 +135,27 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 .log .src { margin-left: auto; }
 .log .hash { font-family: var(--mono); color: var(--muted); }
 .commits-n { font-variant-numeric: tabular-nums; }
+.mdf { display: grid; gap: 6px; }
+.mdhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.mdhead label { font-size: 13px; color: var(--g-muted); }
+.mdhead .edit { min-height: 32px; padding: 0 12px; font-size: 13px; }
+.mdview { background: var(--line-soft); border-radius: 6px; padding: 10px 12px; min-height: 44px; overflow-wrap: anywhere; font-size: 15px; line-height: 1.5; color: var(--g-text); }
+.mdview[hidden], .mdf textarea[hidden] { display: none; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote, .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { margin: 8px 0; }
+.md h1 { font-size: 20px; } .md h2 { font-size: 18px; } .md h3 { font-size: 16px; } .md h4, .md h5, .md h6 { font-size: 15px; }
+.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { line-height: 1.3; }
+.md ul, .md ol { padding-left: 22px; }
+.md li.task { list-style: none; margin-left: -22px; display: flex; gap: 10px; align-items: flex-start; min-height: 32px; padding: 4px 0; }
+.md li.task > span { padding-top: 1px; }
+.md code { font-family: var(--mono); font-size: .9em; background: var(--line); border-radius: 4px; padding: 1px 5px; }
+.md pre { background: var(--line); border-radius: 6px; padding: 10px 12px; overflow-x: auto; }
+.md pre code { background: none; padding: 0; font-size: 13px; line-height: 1.45; }
+.md blockquote { border-left: 3px solid var(--line); padding-left: 12px; color: var(--g-muted); }
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+.md a { color: var(--accent); text-decoration: underline; }
+.md img { max-width: 100%; max-height: 360px; border-radius: 6px; display: block; }
 .hint { color: var(--muted); font-size: 13px; margin: 0; }
 @media (max-width: 600px) { dialog { height: 100dvh; border-radius: 0; } }
 @media (prefers-reduced-motion: no-preference) { button { transition: background-color .12s; } }
@@ -171,11 +188,21 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
       <label><input type="checkbox" name="needsYou"> Needs you</label>
       <label><input type="checkbox" name="blocked"> Blocked</label>
     </div>
-    <label class="f"><span>Description (markdown, paste images here)</span><textarea name="description" rows="6"></textarea></label>
-    <label class="f"><span>Verify notes</span><textarea name="verifyNotes" rows="4"></textarea></label>
-    <label class="f"><span>How to verify (one "- [ ] step" per line)</span><textarea name="howToVerify" rows="4"></textarea></label>
-    <ul class="todo-list" id="steps" aria-label="Verification steps"></ul>
-    <div class="imgs" id="imgs"></div>
+    <div class="f mdf" data-field="description">
+      <div class="mdhead"><label for="ta-description">Description (markdown, paste images here)</label><button type="button" class="edit" aria-label="Edit description">Edit</button></div>
+      <div class="mdview" aria-label="Description (markdown, paste images here) (rendered)"></div>
+      <textarea id="ta-description" name="description" rows="6"></textarea>
+    </div>
+    <div class="f mdf" data-field="verifyNotes">
+      <div class="mdhead"><label for="ta-verifyNotes">Verify notes</label><button type="button" class="edit" aria-label="Edit verifyNotes">Edit</button></div>
+      <div class="mdview" aria-label="Verify notes (rendered)"></div>
+      <textarea id="ta-verifyNotes" name="verifyNotes" rows="4"></textarea>
+    </div>
+    <div class="f mdf" data-field="howToVerify">
+      <div class="mdhead"><label for="ta-howToVerify">How to verify (markdown, "- [ ] step" lines become checkboxes)</label><button type="button" class="edit" aria-label="Edit howToVerify">Edit</button></div>
+      <div class="mdview" aria-label="How to verify (markdown, "- [ ] step" lines become checkboxes) (rendered)"></div>
+      <textarea id="ta-howToVerify" name="howToVerify" rows="4"></textarea>
+    </div>
     <section class="log" aria-label="History">
       <h3>History</h3>
       <p class="hint" id="stamps"></p>
@@ -193,7 +220,8 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
   </form>
 </dialog>
 
-<script>
+<script type="module">
+import { renderMarkdown, toggleTask } from "/markdown.js";
 const labels = { inbox: "Inbox", planned: "Planned", todo: "Todo", "in-progress": "In progress", verify: "Verify", done: "Done" };
 const typeList = ["bug", "feature", "task", "decision"];
 const $ = (s) => document.querySelector(s);
@@ -358,7 +386,7 @@ function openCard(id) {
   form.needsYou.checked = c.needsYou;
   form.blocked.checked = c.blocked;
   $("#formMsg").textContent = "";
-  refreshExtras();
+  for (const k of fieldKeys) setMode(k, !c[k].trim());
   renderLog();
   $("#commitsBox").hidden = true;
   api(`/api/cards/${id}`).then((d) => { if (openId === id) renderCommits(d.commits); }).catch(() => {});
@@ -379,23 +407,36 @@ function renderLog() {
   $("#hist").replaceChildren(...(items.length ? items : [h("li", { className: "hint", textContent: "No history recorded yet." })]));
 }
 
-const imgRefs = (t) => [...t.matchAll(/!\[[^\]]*\]\((images\/[A-Za-z0-9._-]+)\)/g)].map((m) => m[1]);
+const fieldKeys = ["description", "verifyNotes", "howToVerify"];
+const fieldEl = (k) => $(`.mdf[data-field="${k}"]`);
 
-function refreshExtras() {
-  const refs = [...new Set([...imgRefs(form.description.value), ...imgRefs(form.verifyNotes.value)])];
-  $("#imgs").replaceChildren(...refs.map((r) => h("a", { href: `/${r}`, target: "_blank", rel: "noopener" }, h("img", { src: `/${r}`, alt: r.slice(7), loading: "lazy" }))));
-  const steps = [...form.howToVerify.value.matchAll(/^[ \t]*- \[( |x|X)\] (.*)$/gm)];
-  $("#steps").replaceChildren(...steps.map((m, i) => {
-    const box = h("input", { type: "checkbox", checked: m[1] !== " " });
-    box.onchange = () => toggleStep(i, box.checked);
-    return h("li", {}, h("label", {}, box, h("span", { textContent: m[2] })));
-  }));
+// A field with content shows rendered markdown; Edit swaps in the textarea. Empty fields stay editable.
+function setMode(k, edit) {
+  const f = fieldEl(k), ta = form[k];
+  if (!edit) f.querySelector(".mdview").innerHTML = renderMarkdown(ta.value);
+  f.querySelector(".mdview").hidden = edit;
+  ta.hidden = !edit;
+  f.querySelector(".edit").textContent = edit ? "Done" : "Edit";
 }
 
-async function toggleStep(index, on) {
-  let n = -1;
-  form.howToVerify.value = form.howToVerify.value.replace(/^([ \t]*- \[)( |x|X)(\] .*)$/gm, (all, a, _m, b) => (++n === index ? `${a}${on ? "x" : " "}${b}` : all));
-  await save(false);
+for (const k of fieldKeys) {
+  const f = fieldEl(k), ta = form[k], btn = f.querySelector(".edit");
+  btn.onclick = () => {
+    const edit = ta.hidden;
+    setMode(k, edit || !ta.value.trim());
+    if (edit) ta.focus();
+  };
+  ta.addEventListener("blur", (e) => {
+    if (e.relatedTarget === btn || !document.hasFocus() || !ta.value.trim()) return;
+    setMode(k, false);
+  });
+  f.querySelector(".mdview").addEventListener("change", async (e) => {
+    const box = e.target.closest?.("input[data-task]");
+    if (!box) return;
+    ta.value = toggleTask(ta.value, Number(box.dataset.task), box.checked);
+    setMode(k, false);
+    await save(false);
+  });
 }
 
 async function save(close = true) {
@@ -419,7 +460,6 @@ $("#del").onclick = async () => {
 };
 dlg.onclose = () => { openId = null; };
 dlg.onclick = (e) => { if (e.target === dlg) dlg.close(); };
-for (const k of ["description", "verifyNotes", "howToVerify"]) form[k].addEventListener("input", refreshExtras);
 
 async function onPaste(e) {
   const file = [...(e.clipboardData?.files ?? [])].find((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type));
@@ -432,7 +472,6 @@ async function onPaste(e) {
     if (!res.ok) throw new Error(data.error);
     const md = `![](${data.url})`;
     ta.setRangeText(md, ta.selectionStart, ta.selectionEnd, "end");
-    refreshExtras();
     $("#formMsg").textContent = "Image added. Save the card to keep the reference.";
   } catch (err) { $("#formMsg").textContent = `Image not uploaded: ${err.message}`; }
 }
