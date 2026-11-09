@@ -119,13 +119,17 @@ header select { width: auto; min-width: 130px; }
 .flag.need { background: var(--need-bg); color: var(--need-text); }
 .flag.block { background: var(--block-bg); color: var(--block-text); }
 .drop-line { height: 3px; border-radius: 2px; background: var(--accent); flex: none; }
-.add { display: flex; gap: 6px; }
-.add input { flex: 1; min-width: 0; background: transparent; }
-.add input:hover, .add input:focus { background: var(--card); }
-.add select.add-type { flex: none; width: auto; min-width: 0; padding: 0 24px 0 8px; background-color: transparent; background-position: right 8px center; color: var(--muted); }
-.add select.add-type:hover, .add select.add-type:focus { background-color: var(--card); color: var(--text); }
-.add button { background: transparent; color: var(--muted); }
-.add button:hover { background: var(--card); color: var(--text); }
+.add-open { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: flex-start; background: transparent; color: var(--muted); padding: 0 10px; }
+.add-open:hover { background: var(--card); color: var(--text); }
+.add-open svg, .composer-close svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.composer { display: flex; flex-direction: column; gap: 8px; }
+.composer textarea { min-height: 64px; padding: 8px 10px; resize: none; background: var(--card); line-height: 1.4; }
+.kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+.kind { min-height: 32px; padding: 0 10px; font-size: 13px; background: var(--line-soft); color: var(--muted); }
+.kind[aria-pressed=true] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.composer-actions { display: flex; gap: 8px; align-items: center; }
+.composer-close { background: transparent; color: var(--muted); width: 44px; padding: 0; display: grid; place-items: center; }
+.composer-close:hover { background: var(--card); color: var(--text); }
 
 /* Glass: only the detail dialog. Everything else stays flat. */
 dialog { width: min(680px, 100vw); max-height: 100dvh; margin: auto; padding: 0; border: 1px solid var(--g-border); border-radius: 16px; background: var(--g-surface); color: var(--g-text); box-shadow: var(--g-shadow); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); --focus: var(--g-primary); }
@@ -283,6 +287,7 @@ const matches = (c) => (!phase || c.phase === phase) && (!typeF || c.type === ty
 let loaded = false;
 let openId = null;
 const drafts = {};
+let composing = null;
 
 const api = async (path, method = "GET", body) => {
   const res = await fetch(path, {
@@ -321,9 +326,43 @@ function render() {
 
   const board = $("#board");
   if (!loaded) { board.replaceChildren(h("p", { className: "empty", textContent: "Loading board" })); return; }
-  const focused = document.activeElement?.closest?.(".add") && document.activeElement.closest(".column").dataset.col;
+  const hadFocus = !!document.activeElement?.closest?.(".composer");
   board.replaceChildren(...columns.map(columnEl));
-  if (focused) $(`.column[data-col="${focused}"] .add input`)?.focus();
+  if (hadFocus) { const t = $(".composer textarea"); if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }
+}
+
+const plusIcon = () => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("aria-hidden", "true"); s.innerHTML = '<path d="M8 3v10M3 8h10"/>'; return s; };
+const closeIcon = () => { const s = document.createElementNS("http://www.w3.org/2000/svg", "svg"); s.setAttribute("viewBox", "0 0 16 16"); s.setAttribute("aria-hidden", "true"); s.innerHTML = '<path d="M4 4l8 8M12 4l-8 8"/>'; return s; };
+
+function composerEl(col) {
+  const input = h("textarea", { placeholder: "Enter a title", maxLength: 200, rows: 2, ariaLabel: `Title of the new card in ${labels[col]}` });
+  input.value = drafts[col] ?? "";
+  input.oninput = () => { drafts[col] = input.value; };
+  const close = () => { composing = null; drafts[col] = ""; render(); };
+  const kinds = typeList.map((t) => h("button", { type: "button", className: "kind", textContent: t[0].toUpperCase() + t.slice(1), ariaPressed: String(t === addType), onclick: () => {
+    addType = t; store.set("board.addType", t);
+    kinds.forEach((k, i) => k.setAttribute("aria-pressed", String(typeList[i] === t)));
+    input.focus();
+  } }));
+  const form = h("form", { className: "composer" }, input, h("div", { className: "kinds", role: "group", ariaLabel: "Card type" }, ...kinds),
+    h("div", { className: "composer-actions" }, h("button", { type: "submit", className: "primary", textContent: "Add card" }),
+      h("button", { type: "button", className: "composer-close", ariaLabel: "Cancel", title: "Cancel", onclick: close }, closeIcon())));
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const title = input.value.replace(/\s+/g, " ").trim();
+    if (!title) { input.focus(); return; }
+    try {
+      await api("/api/cards", "POST", { title, column: col, type: addType, ...(phase && { phase }) });
+      input.value = drafts[col] = "";
+      await load();
+      $(".composer textarea")?.focus();
+    } catch (err) { banner(err.message); }
+  };
+  input.onkeydown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); }
+  };
+  return form;
 }
 
 function columnEl(col) {
@@ -331,24 +370,7 @@ function columnEl(col) {
   const shown = mine.filter(matches);
   const list = h("div", { className: "list" }, ...shown.map(cardEl));
   if (!shown.length) list.append(h("p", { className: "empty", textContent: mine.length ? "No matching cards" : "Nothing here" }));
-  const input = h("input", { placeholder: "Add a card", maxLength: 200, ariaLabel: `Add card to ${labels[col]}` });
-  input.value = drafts[col] ?? "";
-  input.oninput = () => { drafts[col] = input.value; };
-  const kind = h("select", { className: "add-type", ariaLabel: `Type of the new card in ${labels[col]}` }, ...["bug", "feature", "task", "decision"].map((t) => h("option", { value: t, textContent: t[0].toUpperCase() + t.slice(1) })));
-  kind.value = addType;
-  kind.onchange = () => { addType = kind.value; store.set("board.addType", addType); document.querySelectorAll(".add-type").forEach((k) => { k.value = addType; }); };
-  const add = h("form", { className: "add" }, input, kind, h("button", { type: "submit", textContent: "Add" }));
-  add.onsubmit = async (e) => {
-    e.preventDefault();
-    const title = input.value.trim();
-    if (!title) return;
-    try {
-      await api("/api/cards", "POST", { title, column: col, type: addType, ...(phase && { phase }) });
-      input.value = drafts[col] = "";
-      await load();
-      $(`.column[data-col="${col}"] .add input`)?.focus();
-    } catch (err) { banner(err.message); }
-  };
+  const add = composing === col ? composerEl(col) : h("button", { type: "button", className: "add-open", onclick: () => { composing = col; render(); $(".composer textarea")?.focus(); } }, plusIcon(), "Add a card");
   const el = h("section", { className: "column" }, h("h2", {}, labels[col], h("span", { className: "count", textContent: String(shown.length) })), list, add);
   el.dataset.col = col;
   wireDrop(el, list, col);
