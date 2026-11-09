@@ -1,6 +1,6 @@
 # Generates public/contour-{light,dark}.svg: topographic lines from a sum-of-sines height field.
 import math, random, sys
-W, H, STEP, LEVELS = 1600, 1000, 8, 16
+W, H, STEP, LEVELS = 1600, 1000, 3, 16
 random.seed(7)
 waves = [(random.uniform(.004, .012), random.uniform(.004, .012), random.uniform(0, 6.28), random.uniform(.5, 1)) for _ in range(7)]
 def h(x, y):
