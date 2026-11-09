@@ -36,7 +36,7 @@ Everything else: cards, chips, inputs, forms, lists, buttons. No shadow, blur or
 ## Card structure
 - `article.card` is a plain, draggable container. It is not a button.
 - The title is a real `button.card-open` (accessible name `Open card N: title`). It has `pointer-events: none`, so mouse presses reach the draggable article (a button inside a draggable element breaks drag in Firefox); keyboard Enter and Space still activate it. A click anywhere on the card that is not another button opens it.
-- `.card-acts` holds the copy and Move buttons, top right. Pointer devices show them on hover and focus (40px); `hover: none` devices always show them at 44px and reserve 88px on the title.
+- `.card-acts` holds the copy and Move buttons. They sit in `.meta-end`, the right end of the meta row, stacked in one grid cell with the age and never over the title or tags. Pointer devices swap the age for the buttons on hover and focus (28px; the cell reserves 56px). `hover: none` devices show the age and the buttons side by side at 44px.
 - Focus ring: `:has(.card-open:focus-visible)` draws a 3px inset ring on the whole card, so it is never clipped by the scrolling column.
 - The detail dialog is named by an `h2` ("Card #N: title"); the title input keeps its own label.
 

@@ -105,12 +105,15 @@ header select { width: auto; min-width: 130px; }
 .ref { font-variant-numeric: tabular-nums; }
 .chip { padding: 0 6px; line-height: 18px; background: var(--line-soft); border-radius: 4px; max-width: 100%; overflow-wrap: anywhere; }
 .card { position: relative; }
-.card-acts { position: absolute; top: 0; right: 0; display: flex; border-radius: 0 6px 0 6px; opacity: 0; }
-.card:hover .card-acts, .card:focus-within .card-acts { opacity: 1; }
-.card-act { width: 40px; height: 40px; min-height: 40px; padding: 0; display: grid; place-items: center; background: transparent; color: var(--muted); }
+.meta-end { flex: none; display: grid; justify-items: end; align-items: start; width: 56px; }
+.meta-end > * { grid-area: 1 / 1; }
+.card-acts { display: flex; margin: -5px -4px 0 0; opacity: 0; pointer-events: none; }
+.card:hover .card-acts, .card:focus-within .card-acts { opacity: 1; pointer-events: auto; }
+.card:hover .age, .card:focus-within .age { opacity: 0; }
+.card-act { width: 28px; height: 28px; min-height: 28px; padding: 0; display: grid; place-items: center; background: transparent; color: var(--muted); }
 .card-act:hover { background: transparent; color: var(--text); }
 .card-act svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-@media (hover: none) { .card-acts { opacity: 1; background: none; } .card-act { width: 44px; height: 44px; min-height: 44px; } .card-open { padding-right: 88px; } }
+@media (hover: none) { .meta-end { width: auto; display: flex; align-items: center; gap: 2px; } .card-acts { opacity: 1; pointer-events: auto; margin: 0; } .card:hover .age { opacity: 1; } .card-act { width: 44px; height: 44px; min-height: 44px; } }
 /* Glass: the Move popover, a floating layer above the board. Items are flat. */
 #movePop { margin: 0; inset: auto; min-width: 208px; max-width: calc(100vw - 16px); padding: 6px; border: 1px solid var(--g-border); border-radius: 16px; background: var(--pop, color-mix(in srgb, var(--g-solid) 92%, transparent)); color: var(--g-text); box-shadow: var(--g-shadow); -webkit-backdrop-filter: blur(var(--blur)); backdrop-filter: blur(var(--blur)); --focus: var(--g-primary); }
 @supports not (backdrop-filter: blur(1px)) { #movePop { background: var(--g-solid); } }
@@ -501,11 +504,8 @@ function cardEl(c) {
     agentChip(c), c.needsYou && h("span", { className: "flag need", textContent: "Needs you" }), c.blocked && h("span", { className: "flag block", textContent: "Blocked" }),
     c.tasksTotal > 0 && h("span", { className: `tasks-n${c.tasksDone === c.tasksTotal ? " full" : ""}`, textContent: `${c.tasksDone}/${c.tasksTotal}`, title: `${c.tasksDone} of ${c.tasksTotal} subtasks done` }),
     c.commitCount > 0 && h("span", { className: "commits-n", textContent: `${c.commitCount} ${c.commitCount === 1 ? "commit" : "commits"}` }));
-  const meta = h("div", { className: "meta" }, tags, c.updated && h("span", { className: "age", textContent: age(c.updated), title: `Updated ${when(c.updated)}` }));
   const open = h("button", { type: "button", className: "card-open", textContent: c.title, ariaLabel: `Open card ${c.id}: ${c.title}` });
   open.dataset.act = "open";
-  const el = h("article", { className: "card", draggable: true }, open, meta);
-  el.dataset.id = c.id;
   const acts = h("div", { className: "card-acts" });
   if (c.column !== "done" && c.column !== "verify") {
     const b = h("button", { type: "button", className: "card-act", title: c.column === "todo" || c.column === "in-progress" ? "Copy prompt for an agent" : "Copy investigate prompt (card not approved)", ariaLabel: `Copy prompt for card ${c.id}` }, copyIcon());
@@ -517,7 +517,9 @@ function cardEl(c) {
   mv.onclick = () => openMove(c, mv);
   mv.dataset.act = "move";
   acts.append(mv);
-  el.append(acts);
+  const meta = h("div", { className: "meta" }, tags, h("div", { className: "meta-end" }, c.updated && h("span", { className: "age", textContent: age(c.updated), title: `Updated ${when(c.updated)}` }), acts));
+  const el = h("article", { className: "card", draggable: true }, open, meta);
+  el.dataset.id = c.id;
   el.onclick = (e) => { if (!e.target.closest("button:not(.card-open)")) openCard(c.id); };
   el.ondragstart = (e) => { e.dataTransfer.setData("text/plain", String(c.id)); e.dataTransfer.effectAllowed = "move"; el.classList.add("dragging"); dragging = true; };
   el.ondragend = () => { el.classList.remove("dragging"); clearDrop(); dragging = false; if (renderPending) { renderPending = false; render(); } };
