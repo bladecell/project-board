@@ -375,6 +375,15 @@ export function startAgent(dir: string, id: number, session: string, ctx: Ctx, r
   return out;
 }
 
+// Shared by `board start` and the MCP claim_card: todo/verify move to in-progress, in-progress is refreshed, the rest is refused.
+export function claimCard(dir: string, id: number, session: string, ctx: Ctx, raw = false): Card {
+  const c = findCard(dir, id);
+  if (c.column === "inbox" || c.column === "planned") throw new Error(`card ${id} is not approved: it is in ${c.column}; the user moves it to todo`);
+  if (c.column === "done") throw new Error(`card ${id} is done; the user moves it back before work can start`);
+  if (c.column !== "in-progress") moveCard(dir, id, "in-progress", null, undefined, ctx);
+  return startAgent(dir, id, session, ctx, raw);
+}
+
 export function stopAgent(dir: string, id: number, ctx: Ctx): Card {
   const old = findCard(dir, id);
   if (!old.agent) return old;
@@ -408,7 +417,7 @@ Work is tracked on a local kanban board (\`board\` command). Data lives in \`${r
 - Columns: inbox, planned, todo, in-progress, verify, done. Blocked is a flag, not a column.
 - Inbox -> Todo is the user's approval. Build only Todo items.
 - At the start of each session run \`board list todo\` and \`board list in-progress\`.
-- Move a card to in-progress when you start it, then run \`board start <id>\`. When done, move it to verify with \`board move <id> verify --notes "what ran + result" --steps "- [ ] check one\\n- [ ] check two"\` and run \`board stop <id>\`. Notes are for what you ran and the result; anything the user should check by hand goes in How to verify as \`- [ ]\` lines (\`--steps\`).
+- \`board start <id>\` moves a todo card to in-progress and marks you as working on it; use it (or \`claim_card\`) before doing any work. When done, move it to verify with \`board move <id> verify --notes "what ran + result" --steps "- [ ] check one\\n- [ ] check two"\` and run \`board stop <id>\`. Notes are for what you ran and the result; anything the user should check by hand goes in How to verify as \`- [ ]\` lines (\`--steps\`).
 - Only the user moves cards to done.
 - If the \`board\` MCP server is configured, use its tools instead (\`next_card\`, \`claim_card\`, \`add_note\`, \`move_to_verify\` with \`howToVerify\`, \`set_how_to_verify\`, \`add_card\`, \`release_card\`); agents cannot move cards to todo, planned or done.
 - Add new items you find with \`board add "title"\`; they land in inbox. Use \`--needs-you\` for unsure items and decisions.

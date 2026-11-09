@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 import { basename, dirname, join, resolve } from "node:path";
 import {
-  boardDir, boardRel, columns, convertSubtasks, createCard, hasBoard, initBoard, isAgentLive, loadCards, moveCard, setSteps, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
+  boardDir, boardRel, columns, convertSubtasks, createCard, claimCard, hasBoard, initBoard, isAgentLive, loadCards, moveCard, setSteps, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
   type Card,
 } from "./lib";
 import { getCommits, linkCommits } from "./commits";
@@ -18,7 +18,7 @@ board move <id> <column> [--notes "what ran + result"] [--steps "- [ ] check one
 board steps <id> [--steps "..."]  append manual checks to How to verify (or pipe them on stdin)
 board list [column]        one line per card (done is hidden unless asked for)
 board show <id>
-board start <id> [--session label]  mark an agent as working on the card (no column move)
+board start <id> [--session label]  move a todo (or verify) card to in-progress and mark an agent as working on it
 board stop <id>            clear the agent marker
 board touch                heartbeat for a Claude Code hook (reads hook JSON on stdin, silent)
 board mcp                  stdio MCP server for agents (Claude Code, opencode, ...); run from the project dir or pass --dir
@@ -168,10 +168,7 @@ try {
     if (args.length < 2) fail("usage: board move <id> <column> [--notes ...]");
     console.log(line(moveCard(need(), cardId(args[0]), column(args[1]), null, values.notes, { by: "cli" }, values.steps)));
   } else if (cmd === "start") {
-    const dir = need();
-    const before = loadCards(dir).find((x) => x.id === cardId(args[0]));
-    if (before && before.column !== "todo" && before.column !== "in-progress" && before.column !== "done") console.error(`board: warning: card is in ${before.column}; the agent marker only shows while it is in-progress (use \`board move ${before.id} in-progress\`).`);
-    const c = startAgent(dir, cardId(args[0]), values.session ?? (process.env.CLAUDE_SESSION_ID || "claude"), { by: "cli" });
+    const c = claimCard(need(), cardId(args[0]), values.session ?? (process.env.CLAUDE_SESSION_ID || "claude"), { by: "cli" });
     console.log(line(c));
   } else if (cmd === "stop") {
     console.log(line(stopAgent(need(), cardId(args[0]), { by: "cli" })));

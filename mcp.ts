@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
-  appendNotes, boardDir, setSteps, createCard, hasBoard, isAgentLive, loadCards, moveCard, sortCards, startAgent, stopAgent, touchAgents, types, updateCard,
+  appendNotes, boardDir, claimCard, setSteps, createCard, hasBoard, isAgentLive, loadCards, moveCard, sortCards, startAgent, stopAgent, touchAgents, types, updateCard,
   type Card, type Ctx,
 } from "./lib";
 
@@ -25,7 +25,7 @@ const tools = [
   { name: "board_list", description: "List cards, one per line. Done is hidden unless column is done.", inputSchema: obj({ column: { type: "string", description: "inbox, planned, todo, in-progress, verify or done" } }) },
   { name: "board_show", description: "Show one card in full: fields, description, verify notes, how to verify, history, linked commits.", inputSchema: obj({ id: idProp }, ["id"]) },
   { name: "next_card", description: "Top card in todo that no live agent holds.", inputSchema: obj({}) },
-  { name: "claim_card", description: "Take a card from todo or in-progress: moves it to in-progress and marks this agent as working on it.", inputSchema: obj({ id: idProp }, ["id"]) },
+  { name: "claim_card", description: "Take a card from todo, in-progress or verify (rework): moves it to in-progress and marks this agent as working on it.", inputSchema: obj({ id: idProp }, ["id"]) },
   { name: "move_to_verify", description: "Move an in-progress card to verify. Verify notes (what ran and the result) are required. Optional howToVerify: manual checks for the user as `- [ ]` lines, one per check (appended, never replaces). Clears the agent marker.", inputSchema: obj({ id: idProp, notes: { type: "string", maxLength: caps.notes }, howToVerify: { type: "string", maxLength: caps.steps } }, ["id", "notes"]) },
   { name: "set_how_to_verify", description: "Append manual checks to How to verify as `- [ ]` lines, one per check. Only for in-progress or verify cards. Existing text is kept; steps already present are skipped.", inputSchema: obj({ id: idProp, steps: { type: "string", maxLength: caps.steps } }, ["id", "steps"]) },
   { name: "add_card", description: "Create a card in inbox for the user to triage.", inputSchema: obj({ title: { type: "string", maxLength: caps.title }, description: { type: "string", maxLength: caps.description }, type: { type: "string", enum: [...types] }, needsYou: { type: "boolean" } }, ["title"]) },
@@ -77,10 +77,8 @@ export function createMcp(root: string, suffix = () => randomBytes(2).toString("
     },
     claim_card(a) {
       const c = find(argId(a));
-      if (c.column !== "todo" && c.column !== "in-progress") refuse(`card ${c.id} is in ${c.column}; only todo or in-progress cards can be claimed`);
       guardOther(c);
-      if (c.column === "todo") moveCard(dir, c.id, "in-progress", null, undefined, ctx());
-      const out = startAgent(dir, c.id, label, ctx(), true);
+      const out = claimCard(dir, c.id, label, ctx(), true);
       return text(`claimed ${line(out)}`, brief(out));
     },
     move_to_verify(a) {

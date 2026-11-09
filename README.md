@@ -21,7 +21,7 @@ board move 7 verify --notes "ran tests, all green" --steps "- [ ] flash and watc
 board steps 7 --steps "- [ ] one\n- [ ] two"   # append to How to verify (or pipe on stdin); duplicates skipped
 board list [column]             # one line per card; done is hidden unless named
 board show 7
-board start 7 [--session label] # mark an agent as working on card 7 (no column move)
+board start 7 [--session label] # todo (or verify) -> in-progress, and mark an agent as working on it; inbox/planned/done refused
 board stop 7                    # clear the marker
 board mcp                       # stdio MCP server for agents; board mcp-config prints the client config
 board subtasks 7                # plain list items in the description become - [ ] subtasks (idempotent)
@@ -36,7 +36,7 @@ The server binds 127.0.0.1 only. Drag cards between columns, paste screenshots i
 
 ## Live agent indicator
 
-A card shows "Claude working" with a pulsing dot while an agent holds it, and "Claude idle 12m" once its heartbeat is older than 5 minutes. The marker is `agent` and `agentAt` in the card frontmatter. `board start <id>` sets it (label from `--session`, else `CLAUDE_SESSION_ID`, else `claude`; first 8 characters kept) and adds a history line "agent started"; `board stop <id>` clears it and adds "agent stopped". Neither moves the card. The heartbeat, `board touch`, only rewrites `agentAt`: no `updated` bump, no history, at most one write per 5 s. It reads the Claude Code hook JSON on stdin (64 KB cap), matches `session_id` by its first 8 characters against cards' labels, prints nothing and always exits 0.
+A card shows "Claude working" with a pulsing dot while an agent holds it, and "Claude idle 12m" once its heartbeat is older than 5 minutes. The marker is `agent` and `agentAt` in the card frontmatter. `board start <id>` sets it (label from `--session`, else `CLAUDE_SESSION_ID`, else `claude`; first 8 characters kept) and adds a history line "agent started". A todo (or verify, for rework) card moves to in-progress first; inbox and planned cards (not approved) and done cards are refused. `board stop <id>` clears the marker and adds "agent stopped" without moving the card. The heartbeat, `board touch`, only rewrites `agentAt`: no `updated` bump, no history, at most one write per 5 s. It reads the Claude Code hook JSON on stdin (64 KB cap), matches `session_id` by its first 8 characters against cards' labels, prints nothing and always exits 0.
 
 To keep the heartbeat fresh, add this to your Claude Code `settings.json` (user or project). Nothing edits it for you:
 

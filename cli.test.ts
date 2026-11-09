@@ -149,3 +149,22 @@ describe("steps", () => {
     void how;
   });
 });
+
+describe("start moves cards", () => {
+  const sh = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a]);
+  const idOf = (out: string) => /^(\d+)/.exec(out)![1];
+  test("todo moves to in-progress with marker; inbox, planned and done exit 1 with a clear message", () => {
+    const t = idOf(sh("add", "from todo", "--column", "todo").stdout.toString());
+    const r = sh("start", t, "--session", "sess1234");
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout.toString()).toContain("in-progress");
+    expect(sh("show", t).stdout.toString()).toMatch(/moved todo → in-progress · cli[\s\S]*agent started · cli/);
+    for (const col of ["inbox", "planned", "done"]) {
+      const id = idOf(sh("add", `x ${col}`, "--column", col).stdout.toString());
+      const s = sh("start", id);
+      expect(s.exitCode).toBe(1);
+      expect(s.stderr.toString()).toMatch(col === "done" ? /done/ : /not approved: it is in .*the user moves it to todo/);
+      expect(sh("show", id).stdout.toString()).not.toContain("agent:");
+    }
+  });
+});

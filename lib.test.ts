@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, utimesSync, readFileSync, readdirSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
+  agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, claimCard, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
   placeCard, serializeCard, slugify, updateCard, type Card,
 } from "./lib";
 
@@ -499,6 +499,26 @@ describe("agent marker", () => {
     expect(touchAgents(dir, "abc", at(100))).toBe(0);
     expect(readFileSync(file, "utf8")).toBe(before);
   });
+  test("start from each column: todo/verify move to in-progress, in-progress refreshes, inbox/planned/done refuse", () => {
+    for (const [col, ok] of [["todo", true], ["in-progress", true], ["verify", true], ["inbox", false], ["planned", false], ["done", false]] as const) {
+      rmSync(root, { recursive: true, force: true });
+      mkdirSync(root, { recursive: true });
+      initBoard(root);
+      const dir = boardDir(root);
+      const c0 = createCard(dir, { title: "a", column: col }, { by: "ui", now: t0 });
+      if (!ok) {
+        expect(() => claimCard(dir, 1, "abc", cli)).toThrow(col === "done" ? /done/ : /not approved: it is in .*the user moves it to todo/);
+        expect(get(dir)).toEqual(c0);
+        continue;
+      }
+      const out = claimCard(dir, 1, "abc", { by: "cli", now: at(30) });
+      expect(out).toMatchObject({ column: "in-progress", agent: "abc" });
+      const texts = out.history.map((h) => h.text);
+      expect(texts.filter((x) => x === "agent started")).toHaveLength(1);
+      expect(texts.filter((x) => x.startsWith("moved"))).toHaveLength(col === "in-progress" ? 0 : 1);
+      if (col !== "in-progress") expect(out.history.find((h) => h.text.startsWith("moved"))).toMatchObject({ text: `moved ${col} → in-progress`, by: "cli" });
+    }
+  });
   test("start refuses done cards", () => {
     const dir = setup();
     moveCard(dir, 1, "done", null, undefined, cli);
@@ -537,6 +557,7 @@ describe("init refreshes the workflow block", () => {
   });
   test("block mentions start and stop", () => {
     expect(workflowBlock("board")).toContain("board start <id>");
+    expect(workflowBlock("board")).toContain("moves a todo card to in-progress");
     expect(workflowBlock("board")).toContain("board stop <id>");
   });
   test("a start marker without an end marker is left alone", () => {

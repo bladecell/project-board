@@ -118,7 +118,7 @@ describe("tools", () => {
     const m = hello();
     const ip = mk("ip", "in-progress");
     expect(call(m, "claim_card", { id: ip.id }).isError).toBeUndefined();
-    for (const col of ["inbox", "planned", "verify", "done"]) {
+    for (const col of ["inbox", "planned", "done"]) {
       const c = mk(`in ${col}`, col);
       expect(call(m, "claim_card", { id: c.id }).isError).toBe(true);
       expect(card(c.id).column).toBe(col);
@@ -205,6 +205,16 @@ describe("tools", () => {
   });
 });
 
+describe("claim parity with board start", () => {
+  test("verify goes back to in-progress for rework; inbox/planned say the card is not approved", () => {
+    const m = hello();
+    const v = mk("rework", "verify");
+    expect(call(m, "claim_card", { id: v.id }).isError).toBeUndefined();
+    expect(card(v.id)).toMatchObject({ column: "in-progress", agent: "claude-code-ab12" });
+    for (const col of ["inbox", "planned"]) expect(call(m, "claim_card", { id: mk(col, col).id }).content[0].text).toContain("not approved");
+  });
+});
+
 describe("how to verify", () => {
   test("set_how_to_verify appends deduped steps in in-progress and verify only", () => {
     const m = hello();
@@ -240,7 +250,7 @@ describe("hard rules: agents cannot", () => {
     const inbox = mk("i", "inbox"); const todo = mk("t", "todo"); const ip = mk("p", "in-progress"); const ver = mk("v", "verify"); const done = mk("d", "done");
     const names = ["move_card", "move", "delete_card", "update_card", "edit_card", "set_column", "claim_card"];
     for (const n of names.slice(0, 6)) expect(rpc(m, "tools/call", { name: n, arguments: { id: todo.id, column: "done" } }).error.code).toBe(-32602);
-    for (const c of [inbox, ver, done]) expect(call(m, "claim_card", { id: c.id }).isError).toBe(true);
+    for (const c of [inbox, done]) expect(call(m, "claim_card", { id: c.id }).isError).toBe(true);
     for (const c of [inbox, todo, ver, done]) expect(call(m, "move_to_verify", { id: c.id, notes: "n" }).isError).toBe(true);
     // extra arguments that try to change user-owned fields are ignored
     call(m, "claim_card", { id: ip.id, column: "done", title: "hacked", phase: "x", needsYou: true, blocked: true });
