@@ -44,6 +44,7 @@ test("subtasks converts the description and is idempotent", () => {
 });
 
 describe("agent commands", () => {
+  afterAll(() => { board("stop", "1"); board("move", "1", "inbox"); });
   const run = (stdin: string | undefined, ...a: string[]) => {
     const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a], { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
     return { out: r.stdout.toString(), err: r.stderr.toString(), code: r.exitCode };
@@ -51,6 +52,7 @@ describe("agent commands", () => {
   const agentOf = () => /^agent: (.*)$/m.exec(board("show", "1"))?.[1];
 
   test("start, touch by hook payload prefix, show, stop", () => {
+    board("move", "1", "in-progress");
     board("start", "1", "--session", "abcdef123456");
     expect(agentOf()).toBe("abcdef12");
     expect(board("show", "1")).toMatch(/· agent started · cli$/m);
@@ -60,6 +62,16 @@ describe("agent commands", () => {
     expect(board("stop", "1")).toContain("0001");
     expect(agentOf()).toBeUndefined();
     expect(board("show", "1")).toMatch(/· agent stopped · cli$/m);
+  });
+
+  test("moving to verify clears the marker; stop afterwards adds nothing; list shows no agent", () => {
+    board("start", "1", "--session", "movetest1");
+    board("move", "1", "verify", "--notes", "ran");
+    expect(agentOf()).toBeUndefined();
+    expect(board("list")).not.toContain("agent:");
+    expect((board("show", "1").match(/agent stopped/g) ?? []).length).toBeGreaterThanOrEqual(1);
+    board("stop", "1");
+    board("move", "1", "in-progress");
   });
 
   test("touch never fails or prints: garbage, empty, oversized, no stdin, no board", () => {

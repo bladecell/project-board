@@ -241,7 +241,12 @@ export function stamp(old: Card | null, next: Card, ctx: Ctx, extra: string[] = 
   const entry = (text: string): HistoryEntry => ({ at, text: cut(oneLine(text)), by: ctx.by });
   if (!old) return { ...next, created: at, updated: at, history: [entry("created")] };
   if (!material.some((k) => old[k] !== next[k])) return next;
-  const history = [...old.history, ...[...diffEvents(old, next), ...extra].map(entry)].slice(-maxHistory);
+  const events = [...diffEvents(old, next), ...extra];
+  if (next.column !== "in-progress" && next.agent && old.column !== next.column) {
+    next = { ...next, agent: "", agentAt: "" };
+    events.push("agent stopped");
+  }
+  const history = [...old.history, ...events.map(entry)].slice(-maxHistory);
   return { ...next, created: old.created || at, updated: at, history };
 }
 
@@ -344,9 +349,10 @@ export const AGENT_LIVE_MS = 5 * 60 * 1000;
 const touchMinMs = 5000;
 export const agentLabel = (s: string) => oneLine(s).slice(0, 8);
 
-export const isAgentLive = (c: Pick<Card, "agent" | "agentAt">, now = new Date()) => {
+// A marker only means something while the card is in progress; elsewhere it is stale and ignored.
+export const isAgentLive = (c: Pick<Card, "agent" | "agentAt" | "column">, now = new Date()) => {
   const t = Date.parse(c.agentAt);
-  return !!c.agent && Number.isFinite(t) && now.getTime() - t < AGENT_LIVE_MS;
+  return c.column === "in-progress" && !!c.agent && Number.isFinite(t) && now.getTime() - t < AGENT_LIVE_MS;
 };
 
 const findCard = (dir: string, id: number) => {
@@ -358,6 +364,7 @@ const findCard = (dir: string, id: number) => {
 // raw keeps the full label (MCP servers); hook sessions are matched by their first 8 characters.
 export function startAgent(dir: string, id: number, session: string, ctx: Ctx, raw = false): Card {
   const old = findCard(dir, id);
+  if (old.column === "done") throw new Error(`card ${id} is done; move it back before starting an agent on it`);
   const agent = (raw ? oneLine(session).slice(0, 40) : agentLabel(session)) || "claude";
   const at = iso(ctx.now ?? new Date());
   const same = old.agent === agent;
@@ -383,7 +390,7 @@ export function touchAgents(dir: string, session: string, now = new Date(), exac
   if (!label) return 0;
   let n = 0;
   for (const c of loadCards(dir)) {
-    if (c.agent !== label) continue;
+    if (c.agent !== label || c.column !== "in-progress") continue;
     const last = Date.parse(c.agentAt);
     if (Number.isFinite(last) && now.getTime() - last < touchMinMs) continue;
     writeCard(dir, { ...c, agentAt: iso(now) });

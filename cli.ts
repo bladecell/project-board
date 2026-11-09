@@ -60,7 +60,7 @@ const age = (iso: string) => {
   const m = Math.max(0, Math.floor((Date.now() - Date.parse(iso)) / 60000));
   return m < 1 ? "now" : m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
 };
-const agentNote = (c: Card) => (c.agent ? `agent:${c.agent} ${isAgentLive(c) ? "live" : "idle"} ${c.agentAt ? age(c.agentAt) : ""}`.trim() : "");
+const agentNote = (c: Card) => (c.agent && c.column === "in-progress" ? `agent:${c.agent} ${isAgentLive(c) ? "live" : "idle"} ${c.agentAt ? age(c.agentAt) : ""}`.trim() : "");
 const line = (c: Card) =>
   [String(c.id).padStart(4, "0"), c.column.padEnd(11), c.type.padEnd(8), (c.taskId || "-").padEnd(6),
     [c.needsYou && "needs-you", c.blocked && "blocked"].filter(Boolean).join(",") || "-", c.title, agentNote(c)].filter((p, i, a) => p || i < a.length - 1).join("  ");
@@ -168,7 +168,10 @@ try {
     if (args.length < 2) fail("usage: board move <id> <column> [--notes ...]");
     console.log(line(moveCard(need(), cardId(args[0]), column(args[1]), null, values.notes, { by: "cli" }, values.steps)));
   } else if (cmd === "start") {
-    const c = startAgent(need(), cardId(args[0]), values.session ?? (process.env.CLAUDE_SESSION_ID || "claude"), { by: "cli" });
+    const dir = need();
+    const before = loadCards(dir).find((x) => x.id === cardId(args[0]));
+    if (before && before.column !== "todo" && before.column !== "in-progress" && before.column !== "done") console.error(`board: warning: card is in ${before.column}; the agent marker only shows while it is in-progress (use \`board move ${before.id} in-progress\`).`);
+    const c = startAgent(dir, cardId(args[0]), values.session ?? (process.env.CLAUDE_SESSION_ID || "claude"), { by: "cli" });
     console.log(line(c));
   } else if (cmd === "stop") {
     console.log(line(stopAgent(need(), cardId(args[0]), { by: "cli" })));
@@ -187,7 +190,7 @@ try {
     const id = cardId(args[0]);
     const c = loadCards(dir).find((x) => x.id === id) ?? fail(`no card ${id}`);
     console.log(`# ${join(dir, "cards", c.file)}\n${serializeCard(c)}`);
-    if (c.agent) console.log(`\nAgent ${c.agent}: ${isAgentLive(c) ? "working" : "idle"}, last heartbeat ${c.agentAt ? `${age(c.agentAt)} ago` : "unknown"}`);
+    if (c.agent && c.column === "in-progress") console.log(`\nAgent ${c.agent}: ${isAgentLive(c) ? "working" : "idle"}, last heartbeat ${c.agentAt ? `${age(c.agentAt)} ago` : "unknown"}`);
     const linked = linkCommits(await getCommits(dir), [c]).get(id) ?? [];
     if (linked.length) console.log(`\nCommits (${linked.length}${linked.length > 50 ? ", newest 50" : ""})\n${linked.slice(0, 50).map((k) => `${k.short}  ${k.at.slice(0, 10)}  ${k.subject}`).join("\n")}`);
   } else fail(`unknown command "${cmd}"\n${usage}`);

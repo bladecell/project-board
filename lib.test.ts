@@ -391,8 +391,8 @@ describe("agent marker", () => {
   const setup = () => {
     initBoard(root);
     const dir = boardDir(root);
-    createCard(dir, { title: "a" }, { by: "ui", now: t0 });
-    createCard(dir, { title: "b" }, { by: "ui", now: t0 });
+    createCard(dir, { title: "a", column: "in-progress" }, { by: "ui", now: t0 });
+    createCard(dir, { title: "b", column: "in-progress" }, { by: "ui", now: t0 });
     return dir;
   };
   const get = (dir: string, id = 1) => loadCards(dir).find((c) => c.id === id)!;
@@ -415,7 +415,7 @@ describe("agent marker", () => {
   test("start sets the marker with one history line and bumps updated; no column move", () => {
     const dir = setup();
     const c = startAgent(dir, 1, "0123456789", { by: "cli", now: at(60) });
-    expect(c).toMatchObject({ agent: "01234567", agentAt: "2026-11-09T21:41:12Z", column: "inbox", updated: "2026-11-09T21:41:12Z" });
+    expect(c).toMatchObject({ agent: "01234567", agentAt: "2026-11-09T21:41:12Z", column: "in-progress", updated: "2026-11-09T21:41:12Z" });
     expect(c.history.map((h) => [h.text, h.by])).toEqual([["created", "ui"], ["agent started", "cli"]]);
     expect(get(dir)).toEqual(c);
   });
@@ -465,13 +465,53 @@ describe("agent marker", () => {
     expect(touchAgents(dir, "abc", at(6))).toBe(1);
   });
 
+  test("every move out of in-progress clears the marker with one history line", () => {
+    for (const [col, by] of [["verify", "cli"], ["done", "ui"], ["todo", "ui"], ["planned", "cli"], ["inbox", "ui"]] as const) {
+      rmSync(root, { recursive: true, force: true });
+      mkdirSync(root, { recursive: true });
+      const dir = setup();
+      startAgent(dir, 1, "abc", { by: "cli", now: at(0) });
+      const out = moveCard(dir, 1, col, null, undefined, { by, now: at(10) });
+      expect(out).toMatchObject({ column: col, agent: "", agentAt: "" });
+      expect(out.history.map((h) => h.text).filter((x) => x === "agent stopped")).toHaveLength(1);
+      expect(serializeCard(get(dir))).not.toContain("agent:");
+    }
+  });
+  test("a PUT-style column change clears it too; an explicit stop afterwards adds no second line", () => {
+    const dir = setup();
+    startAgent(dir, 1, "abc", { by: "cli", now: at(0) });
+    const out = updateCard(dir, 1, { column: "verify" }, { by: "ui", now: at(5) });
+    expect(out.agent).toBe("");
+    expect(stopAgent(dir, 1, cli).history.filter((h) => h.text === "agent stopped")).toHaveLength(1);
+  });
+  test("moving a card without a marker adds no agent line; moves within in-progress keep it", () => {
+    const dir = setup();
+    expect(moveCard(dir, 2, "verify", null, undefined, cli).history.map((h) => h.text)).not.toContain("agent stopped");
+    startAgent(dir, 1, "abc", { by: "cli", now: at(0) });
+    expect(moveCard(dir, 1, "in-progress", 2, undefined, cli).agent).toBe("abc");
+  });
+  test("touch ignores cards outside in-progress and does not resurrect them", () => {
+    const dir = setup();
+    startAgent(dir, 1, "abc", { by: "cli", now: at(0) });
+    const file = join(dir, "cards", "0001-a.md");
+    writeFileSync(file, readFileSync(file, "utf8").replace("column: in-progress", "column: verify"));
+    const before = readFileSync(file, "utf8");
+    expect(touchAgents(dir, "abc", at(100))).toBe(0);
+    expect(readFileSync(file, "utf8")).toBe(before);
+  });
+  test("start refuses done cards", () => {
+    const dir = setup();
+    moveCard(dir, 1, "done", null, undefined, cli);
+    expect(() => startAgent(dir, 1, "abc", cli)).toThrow(/done/);
+  });
   test("liveness window boundary", () => {
-    const c = card({ agent: "abc", agentAt: "2026-11-09T21:40:12Z" });
+    const c = card({ agent: "abc", agentAt: "2026-11-09T21:40:12Z", column: "in-progress" });
     const base = Date.parse(c.agentAt);
     expect(isAgentLive(c, new Date(base + AGENT_LIVE_MS - 1))).toBe(true);
     expect(isAgentLive(c, new Date(base + AGENT_LIVE_MS))).toBe(false);
     expect(isAgentLive(card({}), new Date(base))).toBe(false);
-    expect(isAgentLive(card({ agent: "abc" }), new Date(base))).toBe(false);
+    expect(isAgentLive(card({ agent: "abc", column: "in-progress" }), new Date(base))).toBe(false);
+    for (const column of ["inbox", "planned", "todo", "verify", "done"] as const) expect(isAgentLive({ ...c, column }, new Date(base))).toBe(false);
     expect(AGENT_LIVE_MS).toBe(5 * 60 * 1000);
   });
 

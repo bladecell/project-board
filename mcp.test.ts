@@ -98,8 +98,8 @@ describe("tools", () => {
     const m = hello();
     expect(call(m, "next_card", {}).structuredContent.id).toBe(a.id);
     startAgent(dir, a.id, "someone-else", ui, true);
-    expect(call(m, "next_card", {}).structuredContent.id).toBe(b.id);
-    startAgent(dir, a.id, "someone-else", ui, true);
+    expect(call(m, "next_card", {}).structuredContent.id).toBe(a.id);
+    moveCard(dir, a.id, "done", null, undefined, ui);
     moveCard(dir, b.id, "done", null, undefined, ui);
     expect(call(m, "next_card", {}).content[0].text).toBe("no cards in todo");
   });
@@ -123,11 +123,11 @@ describe("tools", () => {
       expect(call(m, "claim_card", { id: c.id }).isError).toBe(true);
       expect(card(c.id).column).toBe(col);
     }
-    const held = mk("held", "todo");
+    const held = mk("held", "in-progress");
     startAgent(dir, held.id, "opencode-zzzz", ui, true);
     expect(call(m, "claim_card", { id: held.id }).isError).toBe(true);
-    expect(card(held.id)).toMatchObject({ column: "todo", agent: "opencode-zzzz" });
-    const stale = mk("stale", "todo");
+    expect(card(held.id)).toMatchObject({ column: "in-progress", agent: "opencode-zzzz" });
+    const stale = mk("stale", "in-progress");
     startAgent(dir, stale.id, "gone", { by: "cli", now: new Date(Date.now() - 6 * 60000) }, true);
     expect(call(m, "claim_card", { id: stale.id }).isError).toBeUndefined();
     expect(card(stale.id).agent).toBe("claude-code-ab12");

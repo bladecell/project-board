@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { boardDir, createCard, initBoard, startAgent } from "./lib";
@@ -129,14 +129,19 @@ describe("commit links", () => {
 describe("agent fields", () => {
   test("list exposes agent, agentAt, agentLive; live info constant; PUT cannot set them", async () => {
     const dir = boardDir(root);
-    const a = createCard(dir, { title: "live one" }, { by: "ui" });
-    const b = createCard(dir, { title: "stale one" }, { by: "ui" });
+    const a = createCard(dir, { title: "live one", column: "in-progress" }, { by: "ui" });
+    const b = createCard(dir, { title: "stale one", column: "in-progress" }, { by: "ui" });
     startAgent(dir, a.id, "sess1234", { by: "cli" });
     startAgent(dir, b.id, "old12345", { by: "cli", now: new Date(Date.now() - 6 * 60 * 1000) });
     const list = await (await fetch(`${base}/api/cards`)).json();
     expect(list.find((c: any) => c.id === a.id)).toMatchObject({ agent: "sess1234", agentLive: true });
     expect(list.find((c: any) => c.id === b.id)).toMatchObject({ agent: "old12345", agentLive: false });
     expect(list.find((c: any) => c.id === b.id).agentAt).toMatch(/Z$/);
+    const c = createCard(dir, { title: "stale elsewhere", column: "verify" }, { by: "ui" });
+    const f = join(dir, "cards", c.file);
+    writeFileSync(f, readFileSync(f, "utf8").replace("---\n\n", `agent: ghost\nagentAt: ${new Date().toISOString().replace(/\.\d{3}Z$/, "Z")}\n---\n\n`));
+    const again = await (await fetch(`${base}/api/cards`)).json();
+    expect(again.find((x: any) => x.id === c.id)).toMatchObject({ agent: "ghost", agentLive: false });
     expect((await (await fetch(`${base}/api/info`)).json()).agentLiveMs).toBe(300000);
     const put = await fetch(`${base}/api/cards/${a.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ agent: "x", blocked: true }) });
     expect((await put.json()).agent).toBe("sess1234");

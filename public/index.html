@@ -358,9 +358,9 @@ const age = (iso) => {
 };
 
 let agentLiveMs = 300000;
-const agentLive = (c) => !!c.agent && Date.now() - Date.parse(c.agentAt) < agentLiveMs;
+const agentLive = (c) => c.column === "in-progress" && !!c.agent && Date.now() - Date.parse(c.agentAt) < agentLiveMs;
 function agentChip(c) {
-  if (!c.agent) return null;
+  if (!c.agent || c.column !== "in-progress") return null;
   const live = agentLive(c);
   const ago = c.agentAt ? age(c.agentAt) : "";
   return h("span", { className: `agent${live ? " live" : ""}`, title: `Session ${c.agent}${c.agentAt ? `, last heartbeat ${when(c.agentAt)}` : ""}` },
