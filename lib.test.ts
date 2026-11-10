@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, utimesSync, readFileSync, readdirSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  answerCard, cleanOptions, agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, claimCard, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
+  answerCard, reopenCard, optLabel, optReason, cleanOptions, agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, claimCard, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
   placeCard, serializeCard, slugify, updateCard, type Card,
 } from "./lib";
 
@@ -16,7 +16,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 const card = (o: Partial<Card>): Card => ({
   id: 1, file: "0001-a.md", column: "inbox", order: 1, type: "task", taskId: "", phase: "", lane: "",
   needsYou: false, blocked: false, title: "a", description: "", verifyNotes: "", howToVerify: "",
-  options: [], multi: false, answer: "", created: "", updated: "", history: [], agent: "", agentAt: "", ...o,
+  options: [], recommended: "", multi: false, answer: "", created: "", updated: "", history: [], agent: "", agentAt: "", ...o,
 });
 
 describe("card parse/serialize", () => {
@@ -44,7 +44,7 @@ Some body
 - [x] two
 `;
     expect(parseCard("0012-fix.md", text)).toEqual({
-      options: [], multi: false, answer: "",
+      options: [], recommended: "", multi: false, answer: "",
       id: 12, file: "0012-fix.md", column: "verify", order: 3, type: "bug", taskId: "P2.3", phase: "P2", lane: "fw",
       needsYou: true, blocked: false, title: "Fix: the thing",
       description: "Some body\n![](images/a.png)", verifyNotes: "- ran it", howToVerify: "- [ ] one\n- [x] two",
@@ -585,7 +585,7 @@ describe("question cards", () => {
     expect(() => cleanOptions("x")).toThrow();
     expect(() => cleanOptions([1])).toThrow();
     expect(() => cleanOptions(Array.from({ length: 13 }, (_, i) => `o${i}`))).toThrow();
-    expect(() => cleanOptions(["x".repeat(201)])).toThrow();
+    expect(() => cleanOptions(["x".repeat(301)])).toThrow();
   });
   test("answering records the choice, clears needs-you and moves to done", () => {
     const { d, c } = ask();
@@ -605,5 +605,28 @@ describe("question cards", () => {
     expect(answerCard(m.d, m.c.id, { choices: ["Mosquitto", "EMQX"] }, cli).answer).toBe("- Mosquitto\n- EMQX");
     const f = createCard(m.d, { title: "Free", type: "decision" }, cli);
     expect(answerCard(m.d, f.id, { comment: "use TLS" }, cli).answer).toBe("use TLS");
+  });
+  test("reasons ride in the option text; labels are what gets answered and deduped", () => {
+    expect(optLabel("Keep :: cheap and tested")).toBe("Keep");
+    expect(optReason("Keep :: cheap :: and tested")).toBe("cheap :: and tested");
+    expect(optReason("Keep")).toBe("");
+    expect(cleanOptions(["A :: x", "A :: y", "B"])).toEqual(["A :: x", "B"]);
+    const { d, c } = ask({ options: ["Keep :: cheap", "Rewrite :: costly"], recommended: "Keep" });
+    expect(c.recommended).toBe("Keep");
+    expect(answerCard(d, c.id, { choices: ["Keep"] }, cli).answer).toBe("- Keep");
+  });
+  test("recommended must be an option, and is dropped when its option is removed", () => {
+    const { d, c } = ask({ recommended: "EMQX" });
+    expect(() => createCard(d, { title: "x", options: ["A", "B"], recommended: "Z" }, cli)).toThrow("recommended must be");
+    expect(parseCard(c.file, serializeCard(c))!.recommended).toBe("EMQX");
+    expect(updateCard(d, c.id, { options: ["Mosquitto"] }, cli).recommended).toBe("");
+  });
+  test("reopen clears the answer, flags needs-you, returns to inbox and keeps the old answer in history", () => {
+    const { d, c } = ask();
+    answerCard(d, c.id, { choices: ["EMQX"] }, cli);
+    const out = reopenCard(d, c.id, cli);
+    expect(out).toMatchObject({ column: "inbox", needsYou: true, answer: "" });
+    expect(out.history.some((h) => h.text.includes("previous answer: - EMQX"))).toBe(true);
+    expect(() => reopenCard(d, c.id, cli)).toThrow("no answer");
   });
 });

@@ -304,4 +304,11 @@ describe("asking questions", () => {
     answerCard(dir, id, { choices: ["B"] }, ui);
     expect(call(m, "board_show", { id }).content[0].text).toContain("Answer:\n- B");
   });
+  test("recommended and reasons", () => {
+    const m = hello();
+    const r = call(m, "add_card", { title: "Which?", options: ["A :: fast", "B :: safe"], recommended: "B" });
+    expect(card(r.structuredContent.id)).toMatchObject({ recommended: "B", options: ["A :: fast", "B :: safe"] });
+    expect(call(m, "board_show", { id: r.structuredContent.id }).content[0].text).toContain("- B :: safe (recommended)");
+    expect(call(m, "add_card", { title: "Q", options: ["A", "B"], recommended: "C" }).isError).toBe(true);
+  });
 });

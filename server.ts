@@ -1,7 +1,7 @@
 import { mkdirSync, watch } from "node:fs";
 import { join } from "node:path";
 import { getCommits, linkCommits } from "./commits";
-import { answerCard, taskCounts, isAgentLive, AGENT_LIVE_MS, atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
+import { answerCard, reopenCard, taskCounts, isAgentLive, AGENT_LIVE_MS, atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
 
 const ui = { by: "ui" } as const;
 const maxJson = 1_000_000;
@@ -92,6 +92,9 @@ export function startServer(dir: string, port: number, name: string) {
 
     const am = m === "POST" && /^\/api\/cards\/(\d{1,9})\/answer$/.exec(p);
     if (am) return json(publicCard(answerCard(dir, cardId(am[1]), await readJson(req), ui)));
+
+    const rm = m === "POST" && /^\/api\/cards\/(\d{1,9})\/reopen$/.exec(p);
+    if (rm) return json(publicCard(reopenCard(dir, cardId(rm[1]), ui)));
 
     const cm = /^\/api\/cards\/(\d{1,9})(\/move)?$/.exec(p);
     if (cm) {

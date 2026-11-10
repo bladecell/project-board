@@ -165,4 +165,10 @@ describe("question cards", () => {
     const done = await (await post(`/api/cards/${c.id}/answer`, JSON.stringify({ choices: ["A"] }))).json();
     expect(done).toMatchObject({ column: "done", answer: "- A" });
   });
+  test("reopen undoes an answer; reopening an unanswered card is a 400", async () => {
+    const c = await (await post("/api/cards", JSON.stringify({ title: "Q2", type: "decision" }))).json();
+    expect((await post(`/api/cards/${c.id}/reopen`, "{}")).status).toBe(400);
+    await post(`/api/cards/${c.id}/answer`, JSON.stringify({ comment: "yes" }));
+    expect(await (await post(`/api/cards/${c.id}/reopen`, "{}")).json()).toMatchObject({ column: "inbox", answer: "", needsYou: true });
+  });
 });

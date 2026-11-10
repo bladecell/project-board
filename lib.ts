@@ -27,6 +27,7 @@ export type Card = {
   verifyNotes: string;
   howToVerify: string;
   options: string[];
+  recommended: string;
   multi: boolean;
   answer: string;
   created: string;
@@ -55,7 +56,9 @@ export const fileName = (id: number, title: string) => `${String(id).padStart(4,
 
 const sections = { "verify notes": "verifyNotes", "how to verify": "howToVerify", options: "options", answer: "answer", history: "history" } as const;
 export const maxOptions = 12;
-export const maxOptionLen = 200;
+export const maxOptionLen = 300;
+export const optLabel = (o: string) => o.split(" :: ")[0].trim();
+export const optReason = (o: string) => o.split(" :: ").slice(1).join(" :: ").trim();
 const sectionRe = "verify notes|how to verify|options|answer|history";
 const maxHistory = 200;
 const maxEventText = 160;
@@ -109,6 +112,7 @@ export function parseCard(file: string, text: string): Card | null {
     verifyNotes: parts.verifyNotes.join("\n").trim(),
     howToVerify: parts.howToVerify.join("\n").trim(),
     options: parts.options.flatMap((l) => { const m = /^- (.+)$/.exec(l); return m ? [oneLine(m[1]).slice(0, maxOptionLen)] : []; }).slice(0, maxOptions),
+    recommended: oneLine(meta.recommended ?? "").slice(0, maxOptionLen),
     multi: meta.multi === "true",
     answer: parts.answer.join("\n").trim(),
     created: validIso(meta.created),
@@ -128,6 +132,7 @@ export function serializeCard(c: Card): string {
   if (c.updated) head.push(`updated: ${c.updated}`);
   if (c.agent) head.push(`agent: ${oneLine(c.agent)}`, ...(c.agentAt ? [`agentAt: ${c.agentAt}`] : []));
   if (c.multi) head.push("multi: true");
+  if (c.recommended) head.push(`recommended: ${oneLine(c.recommended)}`);
   head.push(`needsYou: ${c.needsYou}`, `blocked: ${c.blocked}`, `title: ${oneLine(c.title)}`);
   // a leading space keeps user text from being read back as a section heading
   const safe = (t: string) => t.trim().replace(new RegExp(`^(##\\s+(?:${sectionRe})\\s*)$`, "gim"), " $1");
@@ -206,7 +211,8 @@ export function cleanOptions(v: unknown): string[] {
     if (t.length > maxOptionLen) throw new Error(`an option is longer than ${maxOptionLen} characters`);
     return t;
   }).filter(Boolean);
-  const uniq = [...new Set(out)];
+  const seen = new Set<string>();
+  const uniq = out.filter((o) => { const l = optLabel(o); if (!l || seen.has(l)) return false; seen.add(l); return true; });
   if (uniq.length > maxOptions) throw new Error(`at most ${maxOptions} options`);
   return uniq;
 }
@@ -234,6 +240,11 @@ export function applyPatch(c: Card, p: Record<string, unknown>): Card {
   }
   for (const k of ["description", "verifyNotes", "howToVerify"] as const) if (k in p) out[k] = str(p[k], k, 100_000);
   if ("options" in p) out.options = cleanOptions(p.options);
+  if ("recommended" in p) out.recommended = oneLine(str(p.recommended, "recommended", maxOptionLen));
+  if (out.recommended && !out.options.some((o) => optLabel(o) === out.recommended)) {
+    if ("recommended" in p) throw new Error("recommended must be one of the options");
+    out.recommended = "";
+  }
   if ("multi" in p) {
     if (typeof p.multi !== "boolean") throw new Error("multi must be boolean");
     out.multi = p.multi;
@@ -262,7 +273,7 @@ function diffEvents(a: Card, b: Card): string[] {
     if (a[k] !== b[k]) ev.push(`${k} ${none(a[k])} → ${none(b[k])}`);
   }
   if (untick(a.verifyNotes) !== untick(b.verifyNotes)) ev.push("verify notes updated");
-  if (a.options.join("\n") !== b.options.join("\n") || a.multi !== b.multi) ev.push("options updated");
+  if (a.options.join("\n") !== b.options.join("\n") || a.multi !== b.multi || a.recommended !== b.recommended) ev.push("options updated");
   if (a.answer !== b.answer) ev.push(b.answer ? "answered" : "answer cleared");
   return ev;
 }
@@ -272,7 +283,7 @@ export function stamp(old: Card | null, next: Card, ctx: Ctx, extra: string[] = 
   const at = iso(ctx.now ?? new Date());
   const entry = (text: string): HistoryEntry => ({ at, text: cut(oneLine(text)), by: ctx.by });
   if (!old) return { ...next, created: at, updated: at, history: [entry("created")] };
-  if (!material.some((k) => old[k] !== next[k]) && old.options.join("\n") === next.options.join("\n") && old.multi === next.multi && old.answer === next.answer) return next;
+  if (!material.some((k) => old[k] !== next[k]) && old.options.join("\n") === next.options.join("\n") && old.multi === next.multi && old.recommended === next.recommended && old.answer === next.answer) return next;
   const events = [...diffEvents(old, next), ...extra];
   if (next.column !== "in-progress" && next.agent && old.column !== next.column) {
     next = { ...next, agent: "", agentAt: "" };
@@ -325,7 +336,7 @@ export function createCard(dir: string, input: Record<string, unknown>, ctx: Ctx
   const id = nextId(cards);
   const base = applyPatch({
     id, file: "", column: "inbox", order: 0, type: "task", taskId: "", phase: "", lane: "",
-    needsYou: false, blocked: false, title: "", description: "", verifyNotes: "", howToVerify: "", options: [], multi: false, answer: "",
+    needsYou: false, blocked: false, title: "", description: "", verifyNotes: "", howToVerify: "", options: [], recommended: "", multi: false, answer: "",
     created: "", updated: "", history: [], agent: "", agentAt: "",
   }, input);
   if (!base.title) throw new Error("title required");
@@ -369,13 +380,27 @@ export function answerCard(dir: string, id: number, input: Record<string, unknow
   if (!old) throw new Error(`no card ${id}`);
   const picked = input.choices === undefined ? [] : cleanOptions(input.choices);
   const comment = input.comment === undefined ? "" : str(input.comment, "comment", 5000).trim();
-  if (old.options.length) for (const o of picked) if (!old.options.includes(o)) throw new Error(`"${o.slice(0, 40)}" is not one of the options`);
+  if (old.options.length) for (const o of picked) if (!old.options.some((x) => optLabel(x) === o)) throw new Error(`"${o.slice(0, 40)}" is not one of the options`);
   if (!old.multi && picked.length > 1) throw new Error("choose one option");
   if (!picked.length && !comment) throw new Error("choose an option or write an answer");
   const answer = [...picked.map((o) => `- ${o}`), ...(picked.length && comment ? [""] : []), ...(comment ? [comment] : [])].join("\n");
   const changed = placeCard(cards, id, "done", null);
   const next = { ...(changed.find((c) => c.id === id) ?? old), answer, needsYou: false, agent: "", agentAt: "" };
   const out = stamp(old, next, ctx);
+  for (const c of changed) if (c.id !== id) writeCard(dir, c);
+  writeCard(dir, out);
+  return out;
+}
+
+// Undo an answer: back to inbox, flagged Needs you, answer cleared (the old one stays in history).
+export function reopenCard(dir: string, id: number, ctx: Ctx): Card {
+  const cards = loadCards(dir);
+  const old = cards.find((c) => c.id === id);
+  if (!old) throw new Error(`no card ${id}`);
+  if (!old.answer) throw new Error("invalid: card has no answer to reopen");
+  const changed = placeCard(cards, id, "inbox", null);
+  const next = { ...(changed.find((c) => c.id === id) ?? old), answer: "", needsYou: true };
+  const out = stamp(old, next, ctx, [`previous answer: ${oneLine(old.answer)}`]);
   for (const c of changed) if (c.id !== id) writeCard(dir, c);
   writeCard(dir, out);
   return out;

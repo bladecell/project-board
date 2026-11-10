@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import {
-  appendNotes, boardDir, cleanOptions, claimCard, setSteps, createCard, hasBoard, isAgentLive, loadCards, moveCard, sortCards, startAgent, stopAgent, touchAgents, types, updateCard,
+  appendNotes, boardDir, cleanOptions, optLabel, claimCard, setSteps, createCard, hasBoard, isAgentLive, loadCards, moveCard, sortCards, startAgent, stopAgent, touchAgents, types, updateCard,
   type Card, type Ctx,
 } from "./lib";
 
@@ -28,7 +28,7 @@ const tools = [
   { name: "claim_card", description: "Take a card from todo, in-progress or verify (rework): moves it to in-progress and marks this agent as working on it.", inputSchema: obj({ id: idProp }, ["id"]) },
   { name: "move_to_verify", description: "Move an in-progress card to verify. Verify notes (what ran and the result) are required. Optional howToVerify: manual checks for the user as `- [ ]` lines, one per check (appended, never replaces). Clears the agent marker.", inputSchema: obj({ id: idProp, notes: { type: "string", maxLength: caps.notes }, howToVerify: { type: "string", maxLength: caps.steps } }, ["id", "notes"]) },
   { name: "set_how_to_verify", description: "Append manual checks to How to verify as `- [ ]` lines, one per check. Only for in-progress or verify cards. Existing text is kept; steps already present are skipped.", inputSchema: obj({ id: idProp, steps: { type: "string", maxLength: caps.steps } }, ["id", "steps"]) },
-  { name: "add_card", description: "Create a card in inbox for the user to triage. To ask the user a question, pass options (2 to 12 short choices) and optionally multi: true for a pick-several question. The card becomes a decision the user answers in the board; it moves to done on answer. Read the result with board_show (the Answer section).", inputSchema: obj({ title: { type: "string", maxLength: caps.title }, description: { type: "string", maxLength: caps.description }, type: { type: "string", enum: [...types] }, needsYou: { type: "boolean" }, options: { type: "array", items: { type: "string", maxLength: 200 }, maxItems: 12, description: "Choices for the user. Makes the card a decision." }, multi: { type: "boolean", description: "Let the user pick several options (checkboxes) instead of one (radio)." } }, ["title"]) },
+  { name: "add_card", description: "Create a card in inbox for the user to triage. To ask the user a question, pass options (2 to 12 short choices; write \"Label :: one-line reason\" to explain a choice) and recommended (the label of the option you suggest) and optionally multi: true for a pick-several question. The card becomes a decision the user answers in the board; it moves to done on answer. Read the result with board_show (the Answer section).", inputSchema: obj({ title: { type: "string", maxLength: caps.title }, description: { type: "string", maxLength: caps.description }, type: { type: "string", enum: [...types] }, needsYou: { type: "boolean" }, options: { type: "array", items: { type: "string", maxLength: 200 }, maxItems: 12, description: "Choices for the user. Makes the card a decision." }, recommended: { type: "string", maxLength: 300, description: "Label of the option you recommend. Must match an option label." }, multi: { type: "boolean", description: "Let the user pick several options (checkboxes) instead of one (radio)." } }, ["title"]) },
   { name: "add_note", description: "Append a line to a card's verify notes.", inputSchema: obj({ id: idProp, text: { type: "string", maxLength: caps.text } }, ["id", "text"]) },
   { name: "release_card", description: "Clear the agent marker and leave the card in its column.", inputSchema: obj({ id: idProp }, ["id"]) },
 ];
@@ -69,7 +69,7 @@ export function createMcp(root: string, suffix = () => randomBytes(2).toString("
     board_show(a) {
       const c = find(argId(a));
       const { file, ...rest } = c;
-      return text(`${line(c)}\n\n${c.description}${c.options.length ? `\n\nOptions (${c.multi ? "pick several" : "pick one"}):\n${c.options.map((o) => `- ${o}`).join("\n")}` : ""}${c.answer ? `\n\nAnswer:\n${c.answer}` : ""}\n\nVerify notes:\n${c.verifyNotes || "(none)"}\n\nHow to verify:\n${c.howToVerify || "(none)"}\n\nHistory:\n${c.history.map((h) => `${h.at} ${h.text} (${h.by})`).join("\n") || "(none)"}`, rest as unknown as Json);
+      return text(`${line(c)}\n\n${c.description}${c.options.length ? `\n\nOptions (${c.multi ? "pick several" : "pick one"}):\n${c.options.map((o) => `- ${o}${optLabel(o) === c.recommended ? " (recommended)" : ""}`).join("\n")}` : ""}${c.answer ? `\n\nAnswer:\n${c.answer}` : ""}\n\nVerify notes:\n${c.verifyNotes || "(none)"}\n\nHow to verify:\n${c.howToVerify || "(none)"}\n\nHistory:\n${c.history.map((h) => `${h.at} ${h.text} (${h.by})`).join("\n") || "(none)"}`, rest as unknown as Json);
     },
     next_card() {
       const c = sortCards(loadCards(dir)).find((x) => x.column === "todo" && !heldByOther(x));
@@ -108,10 +108,12 @@ export function createMcp(root: string, suffix = () => randomBytes(2).toString("
       if (a.multi !== undefined && typeof a.multi !== "boolean") refuse("multi must be a boolean");
       if (a.multi === true && options.length < 2) refuse("multi needs at least 2 options");
       if (options.length === 1) refuse("a question needs at least 2 options");
+      const recommended = argStr(a, "recommended", 300, false);
+      if (recommended && !options.some((o) => optLabel(o) === recommended)) refuse("recommended must match the label of one option");
       const type = a.type === undefined ? (options.length ? "decision" : "task") : a.type;
       if (!(types as readonly unknown[]).includes(type)) refuse(`type must be one of ${types.join(", ")}`);
       if (a.needsYou !== undefined && typeof a.needsYou !== "boolean") refuse("needsYou must be a boolean");
-      const c = createCard(dir, { title, description, type, column: "inbox", needsYou: a.needsYou === true || options.length > 0, options, multi: a.multi === true }, ctx());
+      const c = createCard(dir, { title, description, type, column: "inbox", needsYou: a.needsYou === true || options.length > 0, options, recommended, multi: a.multi === true }, ctx());
       return text(`created ${line(c)}`, brief(c));
     },
     add_note(a) {

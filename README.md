@@ -89,7 +89,11 @@ Custom channel/push notifications are Claude Code only and are not implemented.
 
 A `decision` card opens a question dialog instead of the edit form: the description, the options as radio buttons (or checkboxes when the card allows several), an optional comment, and an **Answer** button. Answering saves the choice, clears Needs you and moves the card to done. A decision with no options takes a free-text answer. **Edit card** opens the normal form, where options (one per line) and "Allow choosing several" are set.
 
-An agent asks a question with `add_card` and `options` (2 to 12 short choices, `multi: true` for pick-several). The card lands in inbox flagged Needs you. The agent reads the answer later with `board_show`.
+An agent asks a question with `add_card` and `options` (2 to 12 short choices, `multi: true` for pick-several). Write `Label :: one-line reason` to explain a choice, and pass `recommended` (a label) to mark its pick; the dialog shows the reason under the option and a Recommended chip. The card lands in inbox flagged Needs you. The agent reads the answer later with `board_show`.
+
+A done question has a **Reopen** button: the card goes back to Inbox flagged Needs you, the answer is cleared and the old one stays in History.
+
+Open questions (decision cards not in done and flagged Needs you) show as a count in the tab title, e.g. `(2) CAN-Sniffer board`. **Notify me** in the header turns on a desktop notification for each new question; it only fires while the tab is in the background, and the browser asks for permission the first time.
 
 ## Data
 
@@ -113,6 +117,7 @@ lane: fw
 created: 2026-11-09T21:40:12Z   # set by the tool, ISO UTC
 updated: 2026-11-10T08:00:00Z   # bumped on any real change
 multi: true          # only on questions that allow several choices
+recommended: Keep the library   # label of the suggested option
 needsYou: true
 blocked: false
 title: Fix ISO-TP bound
@@ -127,7 +132,7 @@ Free text markdown. Images: ![](images/abc.png)
 - [ ] flash and watch the log
 
 ## Options
-- Keep the library
+- Keep the library :: already tested
 - Write our own
 
 ## Answer

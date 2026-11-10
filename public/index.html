@@ -246,6 +246,12 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 .opt { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 12px; border-radius: 8px; background: var(--line-soft); color: var(--g-text); cursor: pointer; overflow-wrap: anywhere; }
 .opt:hover { background: var(--line); }
 .opt:has(input:checked) { background: var(--t-feature-bg); color: var(--t-feature); font-weight: 600; }
+.opt .txt { display: grid; gap: 2px; min-width: 0; }
+.opt .why { font-size: 13px; font-weight: 400; color: var(--g-muted); }
+.opt:has(input:checked) .why { color: inherit; opacity: .85; }
+.rec { margin-left: 8px; font-size: 12px; font-weight: 600; padding: 0 6px; border-radius: 4px; background: var(--t-feature-bg); color: var(--t-feature); white-space: nowrap; }
+.opt:has(input:checked) .rec { background: transparent; padding: 0; }
+#notify[aria-pressed=true] { background: var(--t-feature-bg); color: var(--t-feature); }
 .opt input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--g-primary); }
 .opt:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
 .answer-box { background: var(--t-feature-bg); color: var(--t-feature); border-radius: 8px; padding: 10px 12px; }
@@ -260,6 +266,7 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
     <select id="type" aria-label="Type"><option value="">All types</option><option value="bug">Bugs</option><option value="feature">Features</option><option value="task">Tasks</option><option value="decision">Decisions</option></select>
     <select id="phase" aria-label="Phase"><option value="">All phases</option></select>
     <button id="needs" type="button" aria-pressed="false">Needs you</button>
+    <button id="notify" type="button" aria-pressed="false" hidden title="Desktop notification when a new question arrives">Notify me</button>
   </div>
 </header>
 <div id="banner" role="alert" hidden></div>
@@ -278,7 +285,7 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
     <div class="answer-box mdview" id="askDone" hidden></div>
     <p class="hint" id="askMsg" role="status"></p>
     <div class="actions">
-      <div><button type="button" id="askEdit">Edit card</button></div>
+      <div><button type="button" id="askEdit">Edit card</button><button type="button" id="askReopen" hidden>Reopen</button></div>
       <div><button type="button" id="askClose">Close</button><button type="submit" class="primary" id="askSubmit">Answer</button></div>
     </div>
   </form>
@@ -297,7 +304,8 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
       <label class="f"><span>Lane</span><input name="lane" maxlength="60"></label>
     </div>
     <div class="f" id="optBox" hidden>
-      <label class="f"><span>Options, one per line (leave empty for a free-text answer)</span><textarea name="options" rows="4"></textarea></label>
+      <label class="f"><span>Options, one per line, optionally "Label :: reason" (leave empty for a free-text answer)</span><textarea name="options" rows="4"></textarea></label>
+      <label class="f"><span>Recommended</span><select name="recommended"></select></label>
       <div class="checks"><label><input type="checkbox" name="multi"> Allow choosing several</label></div>
     </div>
     <div class="checks">
@@ -340,6 +348,8 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 import { countTasks, listToTasks, renderMarkdown, toggleTask } from "/markdown.js";
 import { buildPrompt } from "/prompt.js";
 const labels = { inbox: "Inbox", planned: "Planned", todo: "Todo", "in-progress": "In progress", verify: "Verify", done: "Done" };
+const optLabel = (o) => o.split(" :: ")[0].trim();
+const optReason = (o) => o.split(" :: ").slice(1).join(" :: ").trim();
 const typeList = ["bug", "feature", "task", "decision"];
 const $ = (s) => document.querySelector(s);
 const h = (tag, props = {}, ...kids) => {
@@ -377,11 +387,36 @@ const api = async (path, method = "GET", body) => {
 };
 const banner = (msg) => { $("#banner").hidden = !msg; $("#banner").textContent = msg || ""; };
 
+/* open questions: tab title count and optional desktop notification */
+let boardName = "Board", seenQ = null;
+const openQs = () => cards.filter((c) => c.type === "decision" && c.column !== "done" && c.needsYou);
+const notifyOn = () => "Notification" in window && Notification.permission === "granted" && store.get("board.notify") === "1";
+function syncQuestions() {
+  const qs = openQs();
+  document.title = `${qs.length ? `(${qs.length}) ` : ""}${boardName} board`;
+  if (seenQ && notifyOn() && document.hidden) {
+    for (const c of qs) if (!seenQ.has(c.id)) {
+      const n = new Notification(`Question: ${c.title}`, { body: c.options.length ? c.options.map(optLabel).join(" / ") : "Needs your answer", tag: `q${c.id}` });
+      n.onclick = () => { window.focus(); openCard(c.id); n.close(); };
+    }
+  }
+  seenQ = new Set(qs.map((c) => c.id));
+}
+const syncNotifyBtn = () => { $("#notify").setAttribute("aria-pressed", String(notifyOn())); };
+if ("Notification" in window && Notification.permission !== "denied") $("#notify").hidden = false;
+$("#notify").onclick = async () => {
+  if (notifyOn()) store.set("board.notify", "0");
+  else if ((Notification.permission === "granted" || (await Notification.requestPermission()) === "granted")) store.set("board.notify", "1");
+  syncNotifyBtn();
+};
+syncNotifyBtn();
+
 async function load() {
   try {
     cards = await api("/api/cards");
     loaded = true;
     banner("");
+    syncQuestions();
     if (openId !== null) { renderLog(); renderAgent(); }
   } catch (e) {
     banner(`Could not load cards: ${e.message}. Retrying when the server is back.`);
@@ -634,6 +669,7 @@ function openCard(id, edit = false) {
   form.needsYou.checked = c.needsYou;
   form.blocked.checked = c.blocked;
   form.options.value = c.options.join("\n");
+  fillRecommended(c.recommended);
   form.multi.checked = c.multi;
   $("#optBox").hidden = c.type !== "decision";
   $("#formMsg").textContent = "";
@@ -721,6 +757,7 @@ async function save(close = true) {
   body.needsYou = form.needsYou.checked;
   body.blocked = form.blocked.checked;
   body.options = form.options.value.split("\n").map((o) => o.trim()).filter(Boolean);
+  body.recommended = form.recommended.value;
   body.multi = form.multi.checked;
   try {
     await api(`/api/cards/${openId}`, "PUT", body);
@@ -730,6 +767,12 @@ async function save(close = true) {
   } catch (e) { $("#formMsg").textContent = `Not saved: ${e.message}`; }
 }
 
+const fillRecommended = (cur = form.recommended.value) => {
+  const labels = form.options.value.split("\n").map((o) => optLabel(o)).filter(Boolean);
+  form.recommended.replaceChildren(h("option", { value: "", textContent: "None" }), ...[...new Set(labels)].map((l) => h("option", { value: l, textContent: l })));
+  form.recommended.value = labels.includes(cur) ? cur : "";
+};
+form.options.addEventListener("input", () => fillRecommended());
 form.type.onchange = () => { $("#optBox").hidden = form.type.value !== "decision"; };
 form.onsubmit = (e) => { e.preventDefault(); save(); };
 
@@ -747,13 +790,14 @@ function openAsk(c) {
   const opts = $("#askOpts");
   opts.hidden = answered || !c.options.length;
   $("#askLegend").textContent = c.multi ? "Choose any that apply" : "Choose one";
-  opts.replaceChildren($("#askLegend"), ...c.options.map((o) => h("label", { className: "opt" }, h("input", { type: c.multi ? "checkbox" : "radio", name: "choice", value: o }), h("span", { textContent: o }))));
+  opts.replaceChildren($("#askLegend"), ...c.options.map((o) => h("label", { className: "opt" }, h("input", { type: c.multi ? "checkbox" : "radio", name: "choice", value: optLabel(o) }), h("span", { className: "txt" }, h("span", {}, optLabel(o), optLabel(o) === c.recommended && h("span", { className: "rec", textContent: "Recommended" })), optReason(o) && h("span", { className: "why", textContent: optReason(o) })))));
   $("#askCommentBox").hidden = answered;
   $("#askCommentLabel").textContent = c.options.length ? "Other, or add a comment" : "Your answer";
   $("#askComment").value = "";
   $("#askDone").hidden = !answered;
   $("#askDone").innerHTML = answered ? renderMarkdown(c.answer) : "";
   $("#askSubmit").hidden = answered;
+  $("#askReopen").hidden = !answered;
   $("#askMsg").textContent = "";
   ask.showModal();
   (opts.hidden ? $("#askComment") : opts.querySelector("input"))?.focus();
@@ -767,6 +811,9 @@ askForm.onsubmit = async (e) => {
     ask.close();
     await load();
   } catch (err) { $("#askMsg").textContent = err.message; }
+};
+$("#askReopen").onclick = async () => {
+  try { await api(`/api/cards/${askId}/reopen`, "POST", {}); ask.close(); await load(); } catch (err) { $("#askMsg").textContent = err.message; }
 };
 $("#askClose").onclick = () => ask.close();
 $("#askEdit").onclick = () => { const id = askId; ask.close(); openCard(id, true); };
@@ -812,7 +859,7 @@ es.onmessage = () => { clearTimeout(reloadT); reloadT = setTimeout(load, 300); }
 es.onerror = () => { if (loaded) banner("Live updates disconnected. Reconnecting."); };
 es.onopen = () => { if (loaded) load(); };
 
-api("/api/info").then((i) => { $("#name").textContent = i.name; document.title = `${i.name} board`; columns = i.columns; if (i.agentLiveMs) agentLiveMs = i.agentLiveMs; }).catch(() => {}).finally(load);
+api("/api/info").then((i) => { $("#name").textContent = i.name; boardName = i.name; syncQuestions(); columns = i.columns; if (i.agentLiveMs) agentLiveMs = i.agentLiveMs; }).catch(() => {}).finally(load);
 setInterval(() => { if (document.hidden) return; if (cards.some((c) => c.agent)) { render(); if (dlg.open) renderAgent(); } }, 30000);
 </script>
 </body>
