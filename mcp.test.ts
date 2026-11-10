@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { boardDir, createCard, initBoard, loadCards, moveCard, startAgent } from "./lib";
+import { answerCard, boardDir, createCard, initBoard, loadCards, moveCard, startAgent } from "./lib";
 import { createMcp, latestVersion, supportedVersions } from "./mcp";
 
 const scratch = "/tmp/claude-1000/-home-kuba-dev-esp-CAN-Sniffer/0b32f9e8-d0b6-45bf-89f0-a627f3af6ebb/scratchpad";
@@ -279,5 +279,29 @@ describe("init writes the workflow block into AGENTS.md too", () => {
     writeFileSync(join(root, "AGENTS.md"), a.replace("## Board workflow", "## Board workflow\nstale line"));
     expect(initBoard(root).agents).toBe("updated");
     expect(readFileSync(join(root, "AGENTS.md"), "utf8")).toBe(a);
+  });
+});
+
+describe("asking questions", () => {
+  test("add_card with options makes a needs-you decision; multi is kept", () => {
+    const m = hello();
+    const r = call(m, "add_card", { title: "Which?", options: ["A", "B"], multi: true });
+    expect(r.isError).toBeUndefined();
+    expect(card(r.structuredContent.id)).toMatchObject({ type: "decision", needsYou: true, options: ["A", "B"], multi: true, column: "inbox" });
+  });
+  test("bad options are tool errors, not internal errors", () => {
+    const m = hello();
+    for (const a of [{ options: ["only"] }, { options: "x" }, { options: [1, 2] }, { multi: "y" }, { multi: true }]) {
+      const r = call(m, "add_card", { title: "Q", ...a });
+      expect(r.isError).toBe(true);
+      expect(r.content[0].text).not.toContain("internal error");
+    }
+  });
+  test("board_show returns the answer", () => {
+    const m = hello();
+    const id = call(m, "add_card", { title: "Which?", options: ["A", "B"] }).structuredContent.id;
+    expect(call(m, "board_show", { id }).content[0].text).toContain("Options (pick one)");
+    answerCard(dir, id, { choices: ["B"] }, ui);
+    expect(call(m, "board_show", { id }).content[0].text).toContain("Answer:\n- B");
   });
 });

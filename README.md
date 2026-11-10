@@ -81,9 +81,15 @@ It merges into existing files: other servers, keys, key order and other hooks ar
 
 Manual checks go in How to verify as `- [ ]` lines, never in the verify notes (notes are what the agent ran and the result): `move_to_verify` takes an optional `howToVerify`, and `set_how_to_verify` appends steps to in-progress or verify cards (never deletes existing text, skips duplicates). Squeezed-together `- [ ]` items are split one per line, and notes keep their line breaks.
 
-Tools: `board_list`, `board_show`, `next_card` (top todo card no live agent holds), `claim_card` (todo or in-progress to in-progress, sets the agent marker; refused if another live agent holds it), `move_to_verify` (in-progress to verify, notes required, clears the marker), `add_card` (inbox only), `add_note` (appends to verify notes), `release_card`. Rules enforced in the server: agents never move cards to done, planned or todo, never move a card out of inbox, cannot delete, and cannot edit title, type, phase, lane or flags of existing cards. History lines are tagged `mcp:<client name>`. Every tool call refreshes the heartbeat of the cards this server holds, so the live indicator works without hooks. `board init` writes the workflow block to AGENTS.md (opencode reads it) as well as CLAUDE.md.
+Tools: `board_list`, `board_show`, `next_card` (top todo card no live agent holds), `claim_card` (todo or in-progress to in-progress, sets the agent marker; refused if another live agent holds it), `move_to_verify` (in-progress to verify, notes required, clears the marker), `add_card` (inbox only; with `options` it asks the user a question, see below), `add_note` (appends to verify notes), `release_card`. Rules enforced in the server: agents never move cards to done, planned or todo, never move a card out of inbox, cannot delete, and cannot edit title, type, phase, lane or flags of existing cards. History lines are tagged `mcp:<client name>`. Every tool call refreshes the heartbeat of the cards this server holds, so the live indicator works without hooks. `board init` writes the workflow block to AGENTS.md (opencode reads it) as well as CLAUDE.md.
 
 Custom channel/push notifications are Claude Code only and are not implemented.
+
+## Questions
+
+A `decision` card opens a question dialog instead of the edit form: the description, the options as radio buttons (or checkboxes when the card allows several), an optional comment, and an **Answer** button. Answering saves the choice, clears Needs you and moves the card to done. A decision with no options takes a free-text answer. **Edit card** opens the normal form, where options (one per line) and "Allow choosing several" are set.
+
+An agent asks a question with `add_card` and `options` (2 to 12 short choices, `multi: true` for pick-several). The card lands in inbox flagged Needs you. The agent reads the answer later with `board_show`.
 
 ## Data
 
@@ -106,6 +112,7 @@ phase: P2
 lane: fw
 created: 2026-11-09T21:40:12Z   # set by the tool, ISO UTC
 updated: 2026-11-10T08:00:00Z   # bumped on any real change
+multi: true          # only on questions that allow several choices
 needsYou: true
 blocked: false
 title: Fix ISO-TP bound
@@ -118,6 +125,13 @@ Free text markdown. Images: ![](images/abc.png)
 
 ## How to verify
 - [ ] flash and watch the log
+
+## Options
+- Keep the library
+- Write our own
+
+## Answer
+- Keep the library
 
 ## History
 - 2026-11-09T21:40:12Z · created · cli

@@ -152,4 +152,17 @@ test("serves prompt.js", async () => {
   const r = await fetch(`${base}/prompt.js`);
   expect(r.status).toBe(200);
   expect(await r.text()).toContain("buildPrompt");
+
+});
+
+describe("question cards", () => {
+  test("answer endpoint moves the card to done; bad input is 4xx", async () => {
+    const c = await (await post("/api/cards", JSON.stringify({ title: "Q", type: "decision", options: ["A", "B"] }))).json();
+    expect(c.options).toEqual(["A", "B"]);
+    expect((await post(`/api/cards/${c.id}/answer`, JSON.stringify({ choices: ["Z"] }))).status).toBe(400);
+    expect((await post(`/api/cards/${c.id}/answer`, JSON.stringify({}))).status).toBe(400);
+    expect((await post("/api/cards/9999/answer", JSON.stringify({ comment: "x" }))).status).toBe(404);
+    const done = await (await post(`/api/cards/${c.id}/answer`, JSON.stringify({ choices: ["A"] }))).json();
+    expect(done).toMatchObject({ column: "done", answer: "- A" });
+  });
 });

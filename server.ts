@@ -1,7 +1,7 @@
 import { mkdirSync, watch } from "node:fs";
 import { join } from "node:path";
 import { getCommits, linkCommits } from "./commits";
-import { taskCounts, isAgentLive, AGENT_LIVE_MS, atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
+import { answerCard, taskCounts, isAgentLive, AGENT_LIVE_MS, atomicWrite, createCard, deleteCard, loadCards, moveCard, sortCards, updateCard, columns, type Card } from "./lib";
 
 const ui = { by: "ui" } as const;
 const maxJson = 1_000_000;
@@ -90,6 +90,9 @@ export function startServer(dir: string, port: number, name: string) {
 
     if (m === "POST" && p === "/api/cards") return json(publicCard(createCard(dir, await readJson(req), ui)), 201);
 
+    const am = m === "POST" && /^\/api\/cards\/(\d{1,9})\/answer$/.exec(p);
+    if (am) return json(publicCard(answerCard(dir, cardId(am[1]), await readJson(req), ui)));
+
     const cm = /^\/api\/cards\/(\d{1,9})(\/move)?$/.exec(p);
     if (cm) {
       const id = cardId(cm[1]);
@@ -146,7 +149,7 @@ export function startServer(dir: string, port: number, name: string) {
         return await route(req, url);
       } catch (e) {
         if (e instanceof HttpError) return json({ error: e.message }, e.status);
-        if (e instanceof Error && /^(no card|title required|invalid|\w+ (must be|too long))/.test(e.message)) {
+        if (e instanceof Error && /^(no card|title required|invalid|choose|options must|an option is|at most|".*" is not one of|\w+ (must be|too long))/.test(e.message)) {
           return json({ error: e.message }, /^no card/.test(e.message) ? 404 : 400);
         }
         console.error(e);

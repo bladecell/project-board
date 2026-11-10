@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, utimesSync, readFileSync, readdirSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, claimCard, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
+  answerCard, cleanOptions, agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, claimCard, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
   placeCard, serializeCard, slugify, updateCard, type Card,
 } from "./lib";
 
@@ -16,7 +16,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 const card = (o: Partial<Card>): Card => ({
   id: 1, file: "0001-a.md", column: "inbox", order: 1, type: "task", taskId: "", phase: "", lane: "",
   needsYou: false, blocked: false, title: "a", description: "", verifyNotes: "", howToVerify: "",
-  created: "", updated: "", history: [], agent: "", agentAt: "", ...o,
+  options: [], multi: false, answer: "", created: "", updated: "", history: [], agent: "", agentAt: "", ...o,
 });
 
 describe("card parse/serialize", () => {
@@ -44,6 +44,7 @@ Some body
 - [x] two
 `;
     expect(parseCard("0012-fix.md", text)).toEqual({
+      options: [], multi: false, answer: "",
       id: 12, file: "0012-fix.md", column: "verify", order: 3, type: "bug", taskId: "P2.3", phase: "P2", lane: "fw",
       needsYou: true, blocked: false, title: "Fix: the thing",
       description: "Some body\n![](images/a.png)", verifyNotes: "- ran it", howToVerify: "- [ ] one\n- [x] two",
@@ -564,5 +565,45 @@ describe("init refreshes the workflow block", () => {
     writeFileSync(join(root, "CLAUDE.md"), "x\n<!-- project-board:start -->\nhand edited\n");
     expect(initBoard(root).claude).toBe("present");
     expect(readFileSync(join(root, "CLAUDE.md"), "utf8")).toBe("x\n<!-- project-board:start -->\nhand edited\n");
+  });
+});
+
+describe("question cards", () => {
+  const ask = (extra: Record<string, unknown> = {}) => { initBoard(root); const d = boardDir(root); return { d, c: createCard(d, { title: "Pick a broker", type: "decision", needsYou: true, options: ["Mosquitto", "EMQX"], ...extra }, cli) }; };
+  test("options, multi and answer survive a round trip", () => {
+    const c = card({ options: ["A", "B"], multi: true, answer: "- A\n\nbecause" });
+    expect(parseCard(c.file, serializeCard(c))).toMatchObject({ options: ["A", "B"], multi: true, answer: "- A\n\nbecause" });
+  });
+  test("a description heading named Options or Answer cannot forge the sections", () => {
+    const c = card({ description: "## Options\n- fake\n## Answer\nfake" });
+    const back = parseCard(c.file, serializeCard(c))!;
+    expect(back.options).toEqual([]);
+    expect(back.answer).toBe("");
+  });
+  test("cleanOptions trims, dedupes, caps and rejects non-strings", () => {
+    expect(cleanOptions([" a ", "a", "", "b\nc"])).toEqual(["a", "b c"]);
+    expect(() => cleanOptions("x")).toThrow();
+    expect(() => cleanOptions([1])).toThrow();
+    expect(() => cleanOptions(Array.from({ length: 13 }, (_, i) => `o${i}`))).toThrow();
+    expect(() => cleanOptions(["x".repeat(201)])).toThrow();
+  });
+  test("answering records the choice, clears needs-you and moves to done", () => {
+    const { d, c } = ask();
+    const out = answerCard(d, c.id, { choices: ["EMQX"], comment: "needs clustering" }, { by: "ui" });
+    expect(out).toMatchObject({ column: "done", needsYou: false, answer: "- EMQX\n\nneeds clustering" });
+    expect(out.history.map((h) => h.text).join("|")).toContain("answered");
+  });
+  test("single choice rejects several, unknown options and empty answers", () => {
+    const { d, c } = ask();
+    expect(() => answerCard(d, c.id, { choices: ["Mosquitto", "EMQX"] }, cli)).toThrow("choose one");
+    expect(() => answerCard(d, c.id, { choices: ["Nope"] }, cli)).toThrow("not one of");
+    expect(() => answerCard(d, c.id, { choices: [] }, cli)).toThrow("choose an option");
+    expect(() => answerCard(d, 99, { comment: "x" }, cli)).toThrow("no card");
+  });
+  test("multi accepts several; a free-text answer works without options", () => {
+    const m = ask({ multi: true });
+    expect(answerCard(m.d, m.c.id, { choices: ["Mosquitto", "EMQX"] }, cli).answer).toBe("- Mosquitto\n- EMQX");
+    const f = createCard(m.d, { title: "Free", type: "decision" }, cli);
+    expect(answerCard(m.d, f.id, { comment: "use TLS" }, cli).answer).toBe("use TLS");
   });
 });

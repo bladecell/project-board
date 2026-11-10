@@ -237,6 +237,18 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
   .row > label, .row > label:nth-child(n+4) { grid-column: span 3; }
   .row > label:nth-child(5) { grid-column: span 6; }
 }
+#askDlg { width: min(560px, 100vw); }
+.ask-ref { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--g-muted); margin: 0; }
+#askHeading { margin: 0; font-size: 20px; line-height: 1.3; font-weight: 600; overflow-wrap: anywhere; }
+.opts { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
+.opts[hidden], label.f[hidden] { display: none; }
+.opts legend { padding: 0; font-size: 13px; color: var(--g-muted); margin-bottom: 6px; }
+.opt { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 12px; border-radius: 8px; background: var(--line-soft); color: var(--g-text); cursor: pointer; overflow-wrap: anywhere; }
+.opt:hover { background: var(--line); }
+.opt:has(input:checked) { background: var(--t-feature-bg); color: var(--t-feature); font-weight: 600; }
+.opt input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--g-primary); }
+.opt:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.answer-box { background: var(--t-feature-bg); color: var(--t-feature); border-radius: 8px; padding: 10px 12px; }
 @media (prefers-reduced-motion: no-preference) { button { transition: background-color .12s; } }
 </style>
 </head>
@@ -256,6 +268,22 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
 <dialog id="promptDlg" aria-label="Prompt to copy"><form method="dialog"><p class="hint">Copy this with Ctrl+C, then paste it into your agent.</p><textarea id="promptText" readonly rows="6"></textarea><div class="actions"><button type="submit" class="primary">Close</button></div></form></dialog>
 <main id="board" aria-label="Kanban board"><p class="empty">Loading board</p></main>
 
+<dialog id="askDlg" aria-labelledby="askHeading">
+  <form id="askForm" method="dialog">
+    <p class="ask-ref" id="askRef"></p>
+    <h2 id="askHeading"></h2>
+    <div class="mdview" id="askBody" hidden></div>
+    <fieldset class="opts" id="askOpts" hidden><legend id="askLegend"></legend></fieldset>
+    <label class="f" id="askCommentBox"><span id="askCommentLabel">Your answer</span><textarea id="askComment" rows="3" maxlength="5000"></textarea></label>
+    <div class="answer-box mdview" id="askDone" hidden></div>
+    <p class="hint" id="askMsg" role="status"></p>
+    <div class="actions">
+      <div><button type="button" id="askEdit">Edit card</button></div>
+      <div><button type="button" id="askClose">Close</button><button type="submit" class="primary" id="askSubmit">Answer</button></div>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="dlg" aria-labelledby="dlgHeading">
   <form id="form" method="dialog">
     <h2 id="dlgHeading" class="sr-only"></h2>
@@ -267,6 +295,10 @@ input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
       <label class="f"><span>Task id</span><input name="taskId" maxlength="60" placeholder="P2.3"></label>
       <label class="f"><span>Phase</span><input name="phase" maxlength="60"></label>
       <label class="f"><span>Lane</span><input name="lane" maxlength="60"></label>
+    </div>
+    <div class="f" id="optBox" hidden>
+      <label class="f"><span>Options, one per line (leave empty for a free-text answer)</span><textarea name="options" rows="4"></textarea></label>
+      <div class="checks"><label><input type="checkbox" name="multi"> Allow choosing several</label></div>
     </div>
     <div class="checks">
       <label><input type="checkbox" name="needsYou"> Needs you</label>
@@ -590,9 +622,10 @@ const dlg = $("#dlg"), form = $("#form");
 form.column.replaceChildren(...Object.entries(labels).map(([v, t]) => h("option", { value: v, textContent: t })));
 form.type.replaceChildren(...typeList.map((v) => h("option", { value: v, textContent: v })));
 
-function openCard(id) {
+function openCard(id, edit = false) {
   const c = cards.find((x) => x.id === id);
   if (!c) return;
+  if (c.type === "decision" && !edit) return openAsk(c);
   openId = id;
   openerId = id;
   $("#dlgTitle").textContent = `Card #${id}`;
@@ -600,6 +633,9 @@ function openCard(id) {
   for (const k of ["title", "column", "type", "taskId", "phase", "lane", "description", "verifyNotes", "howToVerify"]) form[k].value = c[k];
   form.needsYou.checked = c.needsYou;
   form.blocked.checked = c.blocked;
+  form.options.value = c.options.join("\n");
+  form.multi.checked = c.multi;
+  $("#optBox").hidden = c.type !== "decision";
   $("#formMsg").textContent = "";
   for (const k of fieldKeys) setMode(k, !c[k].trim());
   renderLog();
@@ -684,6 +720,8 @@ async function save(close = true) {
   const body = Object.fromEntries(["title", "column", "type", "taskId", "phase", "lane", "description", "verifyNotes", "howToVerify"].map((k) => [k, form[k].value]));
   body.needsYou = form.needsYou.checked;
   body.blocked = form.blocked.checked;
+  body.options = form.options.value.split("\n").map((o) => o.trim()).filter(Boolean);
+  body.multi = form.multi.checked;
   try {
     await api(`/api/cards/${openId}`, "PUT", body);
     $("#formMsg").textContent = "Saved";
@@ -692,7 +730,48 @@ async function save(close = true) {
   } catch (e) { $("#formMsg").textContent = `Not saved: ${e.message}`; }
 }
 
+form.type.onchange = () => { $("#optBox").hidden = form.type.value !== "decision"; };
 form.onsubmit = (e) => { e.preventDefault(); save(); };
+
+/* decision card: a question with an answer button that moves the card to done */
+const ask = $("#askDlg"), askForm = $("#askForm");
+let askId = null;
+function openAsk(c) {
+  askId = c.id;
+  openerId = c.id;
+  const answered = c.column === "done" && !!c.answer;
+  $("#askRef").textContent = `Decision #${c.id}`;
+  $("#askHeading").textContent = c.title;
+  $("#askBody").hidden = !c.description.trim();
+  $("#askBody").innerHTML = renderMarkdown(c.description);
+  const opts = $("#askOpts");
+  opts.hidden = answered || !c.options.length;
+  $("#askLegend").textContent = c.multi ? "Choose any that apply" : "Choose one";
+  opts.replaceChildren($("#askLegend"), ...c.options.map((o) => h("label", { className: "opt" }, h("input", { type: c.multi ? "checkbox" : "radio", name: "choice", value: o }), h("span", { textContent: o }))));
+  $("#askCommentBox").hidden = answered;
+  $("#askCommentLabel").textContent = c.options.length ? "Other, or add a comment" : "Your answer";
+  $("#askComment").value = "";
+  $("#askDone").hidden = !answered;
+  $("#askDone").innerHTML = answered ? renderMarkdown(c.answer) : "";
+  $("#askSubmit").hidden = answered;
+  $("#askMsg").textContent = "";
+  ask.showModal();
+  (opts.hidden ? $("#askComment") : opts.querySelector("input"))?.focus();
+}
+askForm.onsubmit = async (e) => {
+  e.preventDefault();
+  if (askId === null) return;
+  const choices = [...askForm.querySelectorAll("input[name=choice]:checked")].map((i) => i.value);
+  try {
+    await api(`/api/cards/${askId}/answer`, "POST", { choices, comment: $("#askComment").value });
+    ask.close();
+    await load();
+  } catch (err) { $("#askMsg").textContent = err.message; }
+};
+$("#askClose").onclick = () => ask.close();
+$("#askEdit").onclick = () => { const id = askId; ask.close(); openCard(id, true); };
+ask.onclose = () => { askId = null; if (!$("#board").contains(document.activeElement) && !dlg.open) focusCard(openerId, "open"); };
+ask.onclick = (e) => { if (e.target === ask) ask.close(); };
 $("#close").onclick = () => dlg.close();
 $("#del").onclick = async () => {
   if (openId === null || !confirm(`Delete card #${openId}? This removes its file.`)) return;

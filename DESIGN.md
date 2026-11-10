@@ -40,6 +40,10 @@ Everything else: cards, chips, inputs, forms, lists, buttons. No shadow, blur or
 - Focus ring: `:has(.card-open:focus-visible)` draws a 3px inset ring on the whole card, so it is never clipped by the scrolling column.
 - The detail dialog is named by an `h2` ("Card #N: title"); the title input keeps its own label.
 
+## Question dialog
+
+`#askDlg` is the dialog for `decision` cards: glass like the detail dialog, 560px wide. Options are `.opt` rows (soft fill, 44px minimum, whole row is the hit area); a checked row takes the feature tint. A single choice uses radios, several use checkboxes. An answered card shows the answer in a tinted box and no form.
+
 ## Scale
 - Type: 12 meta and chips, 13 labels and hints, 14 card titles and column controls, 15 body and fields, 20 board title.
 - Radius: 4 chips, 6 controls and cards, 8 columns, header, toast, 16 dialogs.
