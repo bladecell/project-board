@@ -11,7 +11,7 @@ import { runStdio } from "./mcp";
 import { buildPrompt } from "./public/prompt.js";
 import { installMcp, onPath } from "./installmcp";
 
-const usage = `board                      start the web board in this project and open the browser
+const usage = `board                      start the web board in this project
 board init                 create the board dir, update .gitignore and CLAUDE.md
 board add "title" [--type bug|feature|task|decision] [--column inbox] [--task P2.3] [--phase X] [--lane L] [--needs-you] [--blocked]
 board move <id> <column> [--notes "what ran + result"] [--steps "- [ ] check one\n- [ ] check two"]
@@ -27,14 +27,14 @@ board install-mcp [claude|opencode] [--hooks] [--shared] [--dry-run] [--opencode
                            merge the board MCP server into the project's agent config (explicit opt-in)
 board prompt <id>          print a ready instruction to paste into an agent session
 board subtasks <id>         turn plain list items in the description into - [ ] subtasks
-options: --dir <project root> (default cwd), --port <n> (default 4747), --no-open
+options: --dir <project root> (default cwd), --port <n> (default 4747), --open (open the browser)
 columns: ${columns.join(", ")}`;
 
 const { values, positionals } = parseArgs({
   args: Bun.argv.slice(2).flatMap((a, i, all) => (i > 0 && /^--(steps|notes|session)$/.test(all[i - 1]) && a.startsWith("-") ? [`${all[i - 1]}=${a}`] : [a])).filter((a, i, all) => !(/^--(steps|notes|session)$/.test(a) && all[i + 1]?.startsWith(`${a}=`))),
   allowPositionals: true,
   options: {
-    dir: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" },
+    dir: { type: "string" }, port: { type: "string" }, open: { type: "boolean" },
     type: { type: "string" }, column: { type: "string" }, task: { type: "string" }, phase: { type: "string" },
     lane: { type: "string" }, "needs-you": { type: "boolean" }, blocked: { type: "boolean" }, notes: { type: "string" }, session: { type: "string" }, steps: { type: "string" }, hooks: { type: "boolean" }, shared: { type: "boolean" }, "dry-run": { type: "boolean" }, "opencode-v1": { type: "boolean" },
     help: { type: "boolean", short: "h" },
@@ -102,7 +102,7 @@ async function serve() {
   }
   const url = `http://127.0.0.1:${server!.port}/`;
   console.log(`board: ${url}  (${boardRel(root)}, Ctrl+C to stop)`);
-  if (!values["no-open"]) {
+  if (values.open) {
     try { Bun.spawn(["xdg-open", url], { stdio: ["ignore", "ignore", "ignore"] }).unref(); } catch {}
   }
   process.on("SIGINT", () => { server!.close(); process.exit(0); });

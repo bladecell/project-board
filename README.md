@@ -15,7 +15,7 @@ Then add `~/.bun/bin` to PATH if the installer says so (`fish_add_path ~/.bun/bi
 
 ```sh
 board init                      # create the board dir, update .gitignore, append workflow to CLAUDE.md (if it exists)
-board                           # start the web board on http://127.0.0.1:4747 and open the browser
+board                           # start the web board on http://127.0.0.1:4747
 board add "title" --type bug --task P2.3 --phase P2 --lane fw --needs-you [--column todo] [--blocked]
 board move 7 verify --notes "ran tests, all green" --steps "- [ ] flash and watch the log"
 board steps 7 --steps "- [ ] one\n- [ ] two"   # append to How to verify (or pipe on stdin); duplicates skipped
@@ -31,7 +31,7 @@ board subtasks 7                # plain list items in the description become - [
 
 Card text renders as markdown in the card panel (headings, lists, task checkboxes, code, quotes, links, `images/` images; raw HTML is never rendered, only http/https/mailto links). Edit switches a field to its textarea. `- [ ]` / `- [x]` items are tick boxes in all three fields; ticking writes the exact source line and only bumps `updated`. Cards show a `done/total` chip (description plus how to verify), and "Lists → subtasks" in the card panel converts a plain list. The renderer is `public/markdown.js`.
 
-Options: `--dir <project root>` (default cwd), `--port <n>`, `--no-open`.
+Options: `--dir <project root>` (default cwd), `--port <n>`, `--open` (open the browser; off by default).
 The server binds 127.0.0.1 only. Drag cards between columns, paste screenshots into a card body, edit everything in the detail panel. The board reloads when files change. Drag and drop needs a mouse; on touch use the Column field in the card panel.
 
 ## Live agent indicator
