@@ -25,6 +25,8 @@ board start 7 [--session label] # todo (or verify) -> in-progress, and mark an a
 board stop 7                    # clear the marker
 board mcp                       # stdio MCP server for agents; board mcp-config prints the client config
 board subtasks 7                # plain list items in the description become - [ ] subtasks (idempotent)
+board version                   # installed version
+board update                    # switch to the latest GitHub release
 ```
 
 `board show` also lists the git commits linked to a card. Links are computed live from `git log` (last 2000 commits, nothing stored in the card): a commit subject containing the card's `taskId` or `#<id>` as a whole token (`P2.3` does not match `P2.30` or `P2.3b`). No git repo means no commits. The web UI shows a commit count on the card and the list in the card panel (`GET /api/cards/:id` returns `commits`; the list endpoint returns `commitCount`).
@@ -94,6 +96,12 @@ An agent asks a question with `add_card` and `options` (2 to 12 short choices, `
 A done question has a **Reopen** button: the card goes back to Inbox flagged Needs you, the answer is cleared and the old one stays in History.
 
 Open questions (decision cards not in done and flagged Needs you) show as a count in the tab title, e.g. `(2) CAN-Sniffer board`. **Notify me** in the header turns on a desktop notification for each new question; it only fires while the tab is in the background, and the browser asks for permission the first time.
+
+## Updates
+
+The install script and `board update` install the latest GitHub release (a `vX.Y.Z` tag), not the tip of master. When the board starts it checks the releases API at most once a day (3 second timeout, silent when offline) and prints a line if a newer release exists. Set `BOARD_NO_UPDATE_CHECK=1` to turn the check off. `board update` refuses when the install directory has local changes.
+
+Maintainer: `scripts/release.sh X.Y.Z` bumps `package.json`, runs the tests, tags, pushes and creates the release with `gh`.
 
 ## Data
 

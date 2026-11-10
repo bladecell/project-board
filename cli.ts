@@ -7,6 +7,8 @@ import {
 } from "./lib";
 import { getCommits, linkCommits } from "./commits";
 import { startServer } from "./server";
+import { checkForUpdate, installTag } from "./update";
+import pkg from "./package.json";
 import { runStdio } from "./mcp";
 import { buildPrompt } from "./public/prompt.js";
 import { installMcp, onPath } from "./installmcp";
@@ -21,6 +23,8 @@ board show <id>
 board start <id> [--session label]  move a todo (or verify) card to in-progress and mark an agent as working on it
 board stop <id>            clear the agent marker
 board touch                heartbeat for a Claude Code hook (reads hook JSON on stdin, silent)
+board version              print the installed version
+board update               switch to the latest GitHub release (checked once a day when the board starts; BOARD_NO_UPDATE_CHECK=1 disables)
 board mcp                  stdio MCP server for agents (Claude Code, opencode, ...); run from the project dir or pass --dir
 board mcp-config [claude|opencode|opencode-v1]  print the JSON to paste into .mcp.json or opencode.json
 board install-mcp [claude|opencode] [--hooks] [--shared] [--dry-run] [--opencode-v1]
@@ -105,6 +109,7 @@ async function serve() {
   if (values.open) {
     try { Bun.spawn(["xdg-open", url], { stdio: ["ignore", "ignore", "ignore"] }).unref(); } catch {}
   }
+  checkForUpdate(pkg.version).then((t) => { if (t) console.log(`board: ${t} is available (you have v${pkg.version}). Run \`board update\`.`); });
   process.on("SIGINT", () => { server!.close(); process.exit(0); });
   process.on("SIGTERM", () => { server!.close(); process.exit(0); });
 }
@@ -182,6 +187,12 @@ try {
     const before = loadCards(dir).find((x) => x.id === id) ?? fail(`no card ${id}`);
     const after = convertSubtasks(dir, id, { by: "cli" });
     console.log(after === before || after.description === before.description ? `${line(after)}\nnothing to convert` : `${line(after)}\nconverted list items to subtasks`);
+  } else if (cmd === "version") {
+    console.log(`project-board v${pkg.version}`);
+  } else if (cmd === "update") {
+    const t = await checkForUpdate(pkg.version, { force: true });
+    if (!t) console.log(`project-board v${pkg.version} is up to date (or no release is reachable).`);
+    else { installTag(import.meta.dir, t); console.log(`updated v${pkg.version} -> ${t}. Restart a running board and MCP session.`); }
   } else if (cmd === "show") {
     const dir = need();
     const id = cardId(args[0]);

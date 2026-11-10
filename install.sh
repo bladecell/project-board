@@ -17,13 +17,24 @@ if ! command -v bun >/dev/null; then
   export PATH="$HOME/.bun/bin:$PATH"
 fi
 
+# Install the latest GitHub release tag; fall back to the default branch when nothing is released yet.
+tag="$(git ls-remote --tags --refs "$repo" 'v*' 2>/dev/null | sed 's#.*/##' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
 if [ -d "$dir/.git" ]; then
   say "Updating $dir"
-  git -C "$dir" pull --ff-only
+  if [ -n "$tag" ]; then
+    git -C "$dir" fetch --depth 1 origin tag "$tag" --no-tags
+    git -C "$dir" checkout -q "refs/tags/$tag"
+  else
+    git -C "$dir" pull --ff-only
+  fi
 else
   say "Cloning into $dir"
   mkdir -p "$(dirname "$dir")"
   git clone --depth 1 "$repo" "$dir"
+  if [ -n "$tag" ]; then
+    git -C "$dir" fetch --depth 1 origin tag "$tag" --no-tags
+    git -C "$dir" checkout -q "refs/tags/$tag"
+  fi
 fi
 
 (cd "$dir" && bun link >/dev/null)
