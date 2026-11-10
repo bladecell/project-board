@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, utimesSync, readFileSync, readdirSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  answerCard, reopenCard, optLabel, optReason, cleanOptions, agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, claimCard, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
+  refreshWorkflow, answerCard, reopenCard, optLabel, optReason, cleanOptions, agentLabel, appendNotes, convertSubtasks, isAgentLive, AGENT_LIVE_MS, claimCard, startAgent, stopAgent, touchAgents, workflowBlock, parseHistoryLine, taskCounts, boardDir, createCard, initBoard, isIgnored, loadCards, moveCard, nextId, parseCard,
   placeCard, serializeCard, slugify, updateCard, type Card,
 } from "./lib";
 
@@ -193,11 +193,6 @@ describe("init", () => {
     expect(cm.match(/## Board workflow/g)?.length).toBe(1);
     expect(cm).toContain("`board/`");
     expect(gi).toBe("board/\n");
-  });
-
-  test("missing CLAUDE.md is reported, not created", () => {
-    expect(initBoard(root).claude).toBe("missing");
-    expect(existsSync(join(root, "CLAUDE.md"))).toBe(false);
   });
 
   test("plan/ already ignored needs no gitignore change", () => {
@@ -628,5 +623,32 @@ describe("question cards", () => {
     expect(out).toMatchObject({ column: "inbox", needsYou: true, answer: "" });
     expect(out.history.some((h) => h.text.includes("previous answer: - EMQX"))).toBe(true);
     expect(() => reopenCard(d, c.id, cli)).toThrow("no answer");
+  });
+});
+
+describe("workflow block in the project", () => {
+  test("init creates CLAUDE.md when no agent doc exists", () => {
+    const r = initBoard(root);
+    expect(r.claude).toBe("created");
+    expect(readFileSync(join(root, "CLAUDE.md"), "utf8")).toContain("## Board workflow");
+    expect(existsSync(join(root, "AGENTS.md"))).toBe(false);
+  });
+  test("init leaves an existing AGENTS.md as the only doc and appends to it", () => {
+    writeFileSync(join(root, "AGENTS.md"), "# mine\n");
+    const r = initBoard(root);
+    expect(r.claude).toBe("created");
+    expect(r.agents).toBe("appended");
+  });
+  test("refresh updates a stale block, never adds one, and is a no-op when current", () => {
+    expect(refreshWorkflow(root)).toEqual([]);
+    initBoard(root);
+    expect(refreshWorkflow(root)).toEqual([]);
+    const p = join(root, "CLAUDE.md");
+    writeFileSync(p, readFileSync(p, "utf8").replace("## Board workflow", "## Board workflow\nstale line"));
+    expect(refreshWorkflow(root)).toEqual(["CLAUDE.md"]);
+    expect(readFileSync(p, "utf8")).not.toContain("stale line");
+    writeFileSync(join(root, "AGENTS.md"), "# no block here\n");
+    expect(refreshWorkflow(root)).toEqual([]);
+    expect(readFileSync(join(root, "AGENTS.md"), "utf8")).not.toContain("Board workflow");
   });
 });

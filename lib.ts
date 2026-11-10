@@ -507,7 +507,35 @@ export function isIgnored(gitignore: string, rel: string) {
   return gitignore.split(/\r?\n/).some((l) => parents.includes(l.trim().replace(/^\/+|\/+$/g, "")));
 }
 
-type FileSync = "appended" | "updated" | "present" | "missing";
+type FileSync = "appended" | "updated" | "present" | "missing" | "created";
+
+// Put the workflow block into an agent doc. `create` makes the file when it is missing.
+function syncDoc(root: string, name: string, rel: string, create: boolean, onlyIfPresent = false): FileSync {
+  const p = join(root, name);
+  if (!existsSync(p)) {
+    if (!create || onlyIfPresent) return "missing";
+    writeFileSync(p, `# ${basename(root)}\n\n${workflowBlock(rel)}`);
+    return "created";
+  }
+  const cm = readFileSync(p, "utf8");
+  const s = cm.indexOf(start);
+  const e = s >= 0 ? cm.indexOf(end, s) : -1;
+  if (s < 0) {
+    if (onlyIfPresent) return "present";
+    appendFileSync(p, `${cm.endsWith("\n") ? "" : "\n"}\n${workflowBlock(rel)}`);
+    return "appended";
+  }
+  const next = e >= 0 ? `${cm.slice(0, s)}${workflowBlock(rel).trimEnd()}${cm.slice(e + end.length)}` : cm;
+  if (next === cm) return "present";
+  writeFileSync(p, next);
+  return "updated";
+}
+
+// After an update: bring the marked block in a project's CLAUDE.md / AGENTS.md up to date. Never adds one.
+export function refreshWorkflow(root: string): string[] {
+  const rel = boardDir(root).slice(root.length + 1);
+  return ["CLAUDE.md", "AGENTS.md"].filter((n) => syncDoc(root, n, rel, false, true) === "updated");
+}
 export type InitResult = { dir: string; gitignore: "added" | "already"; claude: FileSync; agents: FileSync };
 
 export function initBoard(root: string): InitResult {
@@ -524,22 +552,7 @@ export function initBoard(root: string): InitResult {
     gitignore = "added";
   }
 
-  const sync = (name: string): InitResult["claude"] => {
-    const p = join(root, name);
-    if (!existsSync(p)) return "missing";
-    const cm = readFileSync(p, "utf8");
-    const s = cm.indexOf(start);
-    const e = s >= 0 ? cm.indexOf(end, s) : -1;
-    if (s < 0) {
-      appendFileSync(p, `${cm.endsWith("\n") ? "" : "\n"}\n${workflowBlock(rel)}`);
-      return "appended";
-    }
-    const next = e >= 0 ? `${cm.slice(0, s)}${workflowBlock(rel).trimEnd()}${cm.slice(e + end.length)}` : cm;
-    if (next === cm) return "present";
-    writeFileSync(p, next);
-    return "updated";
-  };
-  const claude = sync("CLAUDE.md");
-  const agents = sync("AGENTS.md");
+  const claude = syncDoc(root, "CLAUDE.md", rel, true);
+  const agents = syncDoc(root, "AGENTS.md", rel, false);
   return { dir, gitignore, claude, agents };
 }

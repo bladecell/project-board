@@ -14,7 +14,7 @@ Then add `~/.bun/bin` to PATH if the installer says so (`fish_add_path ~/.bun/bi
 ## Use
 
 ```sh
-board init                      # create the board dir, update .gitignore, append workflow to CLAUDE.md (if it exists)
+board init                      # create the board dir, update .gitignore, add the workflow block to CLAUDE.md (created if missing) and AGENTS.md (if it exists)
 board                           # start the web board on http://127.0.0.1:4747
 board add "title" --type bug --task P2.3 --phase P2 --lane fw --needs-you [--column todo] [--blocked]
 board move 7 verify --notes "ran tests, all green" --steps "- [ ] flash and watch the log"
@@ -102,6 +102,8 @@ Open questions (decision cards not in done and flagged Needs you) show as a coun
 The install script and `board update` install the latest GitHub release (a `vX.Y.Z` tag), not the tip of master. When the board starts it checks the releases API at most once a day (3 second timeout, silent when offline) and prints a line if a newer release exists. Set `BOARD_NO_UPDATE_CHECK=1` to turn the check off. `board update` refuses when the install directory has local changes.
 
 Maintainer: `scripts/release.sh X.Y.Z` bumps `package.json`, runs the tests, tags, pushes and creates the release with `gh`.
+
+The workflow block in a project's `CLAUDE.md` / `AGENTS.md` is refreshed automatically when `board` starts, if the project already has the marked block and it is out of date. Text outside the markers is never touched.
 
 ## Data
 

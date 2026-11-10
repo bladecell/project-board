@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 import { basename, dirname, join, resolve } from "node:path";
 import {
-  boardDir, boardRel, columns, convertSubtasks, createCard, claimCard, hasBoard, initBoard, isAgentLive, loadCards, moveCard, setSteps, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
+  boardDir, boardRel, columns, convertSubtasks, createCard, claimCard, hasBoard, initBoard, refreshWorkflow, isAgentLive, loadCards, moveCard, setSteps, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
   type Card,
 } from "./lib";
 import { getCommits, linkCommits } from "./commits";
@@ -14,7 +14,7 @@ import { buildPrompt } from "./public/prompt.js";
 import { installMcp, onPath } from "./installmcp";
 
 const usage = `board                      start the web board in this project
-board init                 create the board dir, update .gitignore and CLAUDE.md
+board init                 create the board dir, update .gitignore, add the workflow block to CLAUDE.md (created if missing)
 board add "title" [--type bug|feature|task|decision] [--column inbox] [--task P2.3] [--phase X] [--lane L] [--needs-you] [--blocked]
 board move <id> <column> [--notes "what ran + result"] [--steps "- [ ] check one\n- [ ] check two"]
 board steps <id> [--steps "..."]  append manual checks to How to verify (or pipe them on stdin)
@@ -109,6 +109,7 @@ async function serve() {
   if (values.open) {
     try { Bun.spawn(["xdg-open", url], { stdio: ["ignore", "ignore", "ignore"] }).unref(); } catch {}
   }
+  for (const n of refreshWorkflow(root)) console.log(`board: refreshed the Board workflow block in ${n}`);
   checkForUpdate(pkg.version).then((t) => { if (t) console.log(`board: ${t} is available (you have v${pkg.version}). Run \`board update\`.`); });
   process.on("SIGINT", () => { server!.close(); process.exit(0); });
   process.on("SIGTERM", () => { server!.close(); process.exit(0); });
@@ -155,7 +156,7 @@ try {
     console.log(`board dir: ${r.dir}`);
     console.log(r.gitignore === "added" ? ".gitignore: added board path" : ".gitignore: already ignored");
     for (const [name, s] of [["CLAUDE.md", r.claude], ["AGENTS.md", r.agents]] as const) {
-      console.log({ appended: `${name}: appended Board workflow block`, updated: `${name}: updated Board workflow block`, present: `${name}: block already present`, missing: `${name}: not found, no workflow block added` }[s]);
+      console.log({ appended: `${name}: appended Board workflow block`, updated: `${name}: updated Board workflow block`, present: `${name}: block already present`, created: `${name}: created with the Board workflow block`, missing: `${name}: not found, no workflow block added` }[s]);
     }
     console.log("agent setup (optional): board install-mcp [claude|opencode] [--hooks]");
     console.log(`start it with: board${root === process.cwd() ? "" : ` --dir ${root}`}`);
