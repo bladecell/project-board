@@ -6,7 +6,7 @@ import { join } from "node:path";
 let root: string;
 beforeAll(() => { root = mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "board-cli-")); });
 afterAll(() => rmSync(root, { recursive: true, force: true }));
-const board = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a]).stdout.toString();
+const board = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...(a[0] === "add" ? [...a, "--type", "task", "--task", "", "--phase", "", "--lane", ""] : a)]).stdout.toString();
 
 test("show prints created, updated and cli-sourced history", () => {
   board("init");
@@ -46,7 +46,7 @@ test("subtasks converts the description and is idempotent", () => {
 describe("agent commands", () => {
   afterAll(() => { board("stop", "1"); board("move", "1", "inbox"); });
   const run = (stdin: string | undefined, ...a: string[]) => {
-    const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a], { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
+    const r = Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...(a[0] === "add" ? [...a, "--type", "task", "--task", "", "--phase", "", "--lane", ""] : a)], { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
     return { out: r.stdout.toString(), err: r.stderr.toString(), code: r.exitCode };
   };
   const agentOf = () => /^agent: (.*)$/m.exec(board("show", "1"))?.[1];
@@ -133,12 +133,12 @@ test("prompt prints the instruction for a card", () => {
 });
 
 describe("steps", () => {
-  const run = (stdin: string | undefined, ...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a], { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
+  const run = (stdin: string | undefined, ...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...(a[0] === "add" ? [...a, "--type", "task", "--task", "", "--phase", "", "--lane", ""] : a)], { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
   const how = () => /## How to verify\n([\s\S]*?)(\n## |\n*$)/.exec(board("show", "1"))?.[1];
   test("move --steps splits literal \\n and flattened items; steps via flag and stdin append without duplicates", () => {
     board("add", "stepper", "--column", "in-progress");
     const id = /^(\d+)/.exec(board("list", "in-progress").split("\n").find((l) => l.includes("stepper"))!)![1];
-    const sh = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a]);
+    const sh = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...(a[0] === "add" ? [...a, "--type", "task", "--task", "", "--phase", "", "--lane", ""] : a)]);
     expect(sh("move", id, "verify", "--notes", "ran it", "--steps", "- [ ] a\\n- [ ] b - [ ] c").exitCode).toBe(0);
     expect(sh("steps", id, "--steps", "- [ ] c\n- [ ] d").exitCode).toBe(0);
     expect(run("- [ ] e\n- [ ] a\n", "steps", id).exitCode).toBe(0);
@@ -151,7 +151,7 @@ describe("steps", () => {
 });
 
 describe("start moves cards", () => {
-  const sh = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...a]);
+  const sh = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, ...(a[0] === "add" ? [...a, "--type", "task", "--task", "", "--phase", "", "--lane", ""] : a)]);
   const idOf = (out: string) => /^(\d+)/.exec(out)![1];
   test("todo moves to in-progress with marker; inbox, planned and done exit 1 with a clear message", () => {
     const t = idOf(sh("add", "from todo", "--column", "todo").stdout.toString());
@@ -167,4 +167,17 @@ describe("start moves cards", () => {
       expect(sh("show", id).stdout.toString()).not.toContain("agent:");
     }
   });
+});
+
+test("add --type decision needs --option choices", () => {
+  const add = (...a: string[]) => Bun.spawnSync(["bun", join(import.meta.dir, "cli.ts"), "--dir", root, "add", "Which db?", "--type", "decision", "--task", "", "--phase", "", "--lane", "", ...a]);
+  const bare = add();
+  expect(bare.exitCode).not.toBe(0);
+  expect(bare.stderr.toString()).toContain("a decision needs at least 2 choices");
+  expect(add("--option", "A", "--option", "B", "--recommended", "C").exitCode).not.toBe(0);
+  const ok = add("--option", "Postgres :: robust", "--option", "SQLite :: simple", "--recommended", "SQLite", "--multi");
+  expect(ok.exitCode).toBe(0);
+  const out = board("show", ok.stdout.toString().match(/^0*(\d+)/)![1]);
+  expect(out).toContain("Postgres :: robust");
+  expect(out).toContain("SQLite :: simple");
 });

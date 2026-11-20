@@ -29,6 +29,7 @@ export type Card = {
   options: string[];
   recommended: string;
   multi: boolean;
+  questions: Question[];
   answer: string;
   created: string;
   updated: string;
@@ -54,12 +55,13 @@ export const slugify = (title: string) =>
 
 export const fileName = (id: number, title: string) => `${String(id).padStart(4, "0")}-${slugify(title)}.md`;
 
-const sections = { "verify notes": "verifyNotes", "how to verify": "howToVerify", options: "options", answer: "answer", history: "history" } as const;
+const sections = { "verify notes": "verifyNotes", "how to verify": "howToVerify", options: "options", questions: "questions", answer: "answer", history: "history" } as const;
 export const maxOptions = 12;
+export const maxQuestions = 10;
 export const maxOptionLen = 300;
 export const optLabel = (o: string) => o.split(" :: ")[0].trim();
 export const optReason = (o: string) => o.split(" :: ").slice(1).join(" :: ").trim();
-const sectionRe = "verify notes|how to verify|options|answer|history";
+const sectionRe = "verify notes|how to verify|options|questions|answer|history";
 const maxHistory = 200;
 const maxEventText = 160;
 const isoRe = /^\d{4}-\d\d-\d\dT[\d:.]+Z$/;
@@ -88,7 +90,7 @@ export function parseCard(file: string, text: string): Card | null {
       bodyStart = end + 1;
     }
   }
-  const parts = { description: [] as string[], verifyNotes: [] as string[], howToVerify: [] as string[], options: [] as string[], answer: [] as string[], history: [] as string[] };
+  const parts = { description: [] as string[], verifyNotes: [] as string[], howToVerify: [] as string[], options: [] as string[], questions: [] as string[], answer: [] as string[], history: [] as string[] };
   let cur: keyof typeof parts = "description";
   for (const l of lines.slice(bodyStart)) {
     const m = new RegExp(`^##\\s+(${sectionRe})\\s*$`, "i").exec(l);
@@ -114,6 +116,7 @@ export function parseCard(file: string, text: string): Card | null {
     options: parts.options.flatMap((l) => { const m = /^- (.+)$/.exec(l); return m ? [oneLine(m[1]).slice(0, maxOptionLen)] : []; }).slice(0, maxOptions),
     recommended: oneLine(meta.recommended ?? "").slice(0, maxOptionLen),
     multi: meta.multi === "true",
+    questions: parts.questions.flatMap((l) => { const m = /^- (\{.+\})$/.exec(l); try { return m ? [cleanQuestion(JSON.parse(m[1]))] : []; } catch { return []; } }).slice(0, maxQuestions),
     answer: parts.answer.join("\n").trim(),
     created: validIso(meta.created),
     updated: validIso(meta.updated),
@@ -140,6 +143,7 @@ export function serializeCard(c: Card): string {
   if (c.verifyNotes.trim()) body.push(`## Verify notes\n${safe(c.verifyNotes)}`);
   if (c.howToVerify.trim()) body.push(`## How to verify\n${safe(c.howToVerify)}`);
   if (c.options.length) body.push(`## Options\n${c.options.map((o) => `- ${oneLine(o)}`).join("\n")}`);
+  if (c.questions.length) body.push(`## Questions\n${c.questions.map((q) => `- ${JSON.stringify(q)}`).join("\n")}`);
   if (c.answer.trim()) body.push(`## Answer\n${safe(c.answer)}`);
   if (c.history.length) body.push(`## History\n${c.history.slice(-maxHistory).map((h) => `- ${h.at} · ${cut(oneLine(h.text))} · ${h.by}`).join("\n")}`);
   return `---\n${head.join("\n")}\n---\n\n${body.filter(Boolean).join("\n\n")}\n`;
@@ -217,6 +221,27 @@ export function cleanOptions(v: unknown): string[] {
   return uniq;
 }
 
+export type Question = { text: string; options: string[]; multi: boolean; recommended: string; tab?: string };
+
+export function cleanQuestion(v: unknown): Question {
+  const q = (v ?? {}) as Record<string, unknown>;
+  if (typeof q !== "object" || typeof q.text !== "string") throw new Error("each question needs text");
+  const text = oneLine(q.text).slice(0, 300);
+  if (!text) throw new Error("each question needs text");
+  const options = q.options === undefined ? [] : cleanOptions(q.options);
+  if (options.length === 1) throw new Error("a question needs at least 2 options or none");
+  const multi = q.multi === true && options.length > 1;
+  const recommended = oneLine(typeof q.recommended === "string" ? q.recommended : "");
+  const tab = oneLine(typeof q.tab === "string" ? q.tab : "").slice(0, 40);
+  return { text, options, multi, recommended: options.some((o) => optLabel(o) === recommended) ? recommended : "", ...(tab && { tab }) };
+}
+
+export function cleanQuestions(v: unknown): Question[] {
+  if (!Array.isArray(v)) throw new Error("questions must be a list");
+  if (v.length > maxQuestions) throw new Error(`at most ${maxQuestions} questions`);
+  return v.map(cleanQuestion);
+}
+
 export function applyPatch(c: Card, p: Record<string, unknown>): Card {
   const out = { ...c };
   if ("title" in p) {
@@ -245,6 +270,7 @@ export function applyPatch(c: Card, p: Record<string, unknown>): Card {
     if ("recommended" in p) throw new Error("recommended must be one of the options");
     out.recommended = "";
   }
+  if ("questions" in p) out.questions = cleanQuestions(p.questions);
   if ("multi" in p) {
     if (typeof p.multi !== "boolean") throw new Error("multi must be boolean");
     out.multi = p.multi;
@@ -273,7 +299,7 @@ function diffEvents(a: Card, b: Card): string[] {
     if (a[k] !== b[k]) ev.push(`${k} ${none(a[k])} → ${none(b[k])}`);
   }
   if (untick(a.verifyNotes) !== untick(b.verifyNotes)) ev.push("verify notes updated");
-  if (a.options.join("\n") !== b.options.join("\n") || a.multi !== b.multi || a.recommended !== b.recommended) ev.push("options updated");
+  if (a.options.join("\n") !== b.options.join("\n") || a.multi !== b.multi || a.recommended !== b.recommended || JSON.stringify(a.questions) !== JSON.stringify(b.questions)) ev.push("options updated");
   if (a.answer !== b.answer) ev.push(b.answer ? "answered" : "answer cleared");
   return ev;
 }
@@ -283,7 +309,7 @@ export function stamp(old: Card | null, next: Card, ctx: Ctx, extra: string[] = 
   const at = iso(ctx.now ?? new Date());
   const entry = (text: string): HistoryEntry => ({ at, text: cut(oneLine(text)), by: ctx.by });
   if (!old) return { ...next, created: at, updated: at, history: [entry("created")] };
-  if (!material.some((k) => old[k] !== next[k]) && old.options.join("\n") === next.options.join("\n") && old.multi === next.multi && old.recommended === next.recommended && old.answer === next.answer) return next;
+  if (!material.some((k) => old[k] !== next[k]) && old.options.join("\n") === next.options.join("\n") && old.multi === next.multi && old.recommended === next.recommended && JSON.stringify(old.questions) === JSON.stringify(next.questions) && old.answer === next.answer) return next;
   const events = [...diffEvents(old, next), ...extra];
   if (next.column !== "in-progress" && next.agent && old.column !== next.column) {
     next = { ...next, agent: "", agentAt: "" };
@@ -336,7 +362,7 @@ export function createCard(dir: string, input: Record<string, unknown>, ctx: Ctx
   const id = nextId(cards);
   const base = applyPatch({
     id, file: "", column: "inbox", order: 0, type: "task", taskId: "", phase: "", lane: "",
-    needsYou: false, blocked: false, title: "", description: "", verifyNotes: "", howToVerify: "", options: [], recommended: "", multi: false, answer: "",
+    needsYou: false, blocked: false, title: "", description: "", verifyNotes: "", howToVerify: "", options: [], recommended: "", multi: false, questions: [], answer: "",
     created: "", updated: "", history: [], agent: "", agentAt: "",
   }, input);
   if (!base.title) throw new Error("title required");
@@ -378,12 +404,29 @@ export function answerCard(dir: string, id: number, input: Record<string, unknow
   const cards = loadCards(dir);
   const old = cards.find((c) => c.id === id);
   if (!old) throw new Error(`no card ${id}`);
-  const picked = input.choices === undefined ? [] : cleanOptions(input.choices);
   const comment = input.comment === undefined ? "" : str(input.comment, "comment", 5000).trim();
-  if (old.options.length) for (const o of picked) if (!old.options.some((x) => optLabel(x) === o)) throw new Error(`"${o.slice(0, 40)}" is not one of the options`);
-  if (!old.multi && picked.length > 1) throw new Error("choose one option");
-  if (!picked.length && !comment) throw new Error("choose an option or write an answer");
-  const answer = [...picked.map((o) => `- ${o}`), ...(picked.length && comment ? [""] : []), ...(comment ? [comment] : [])].join("\n");
+  const fmt = (picked: string[], note: string) => [...picked.map((o) => `- ${o}`), ...(picked.length && note ? [""] : []), ...(note ? [note] : [])].join("\n");
+  let answer: string;
+  if (old.questions.length) {
+    const given = input.answers;
+    if (!Array.isArray(given) || given.length !== old.questions.length) throw new Error("answer every question");
+    answer = old.questions.map((q, i) => {
+      const g = (given[i] ?? {}) as Record<string, unknown>;
+      const picked = g.choices === undefined ? [] : cleanOptions(g.choices);
+      const note = g.comment === undefined ? "" : str(g.comment, "comment", 5000).trim();
+      for (const o of picked) if (q.options.length && !q.options.some((x) => optLabel(x) === o)) throw new Error(`"${o.slice(0, 40)}" is not one of the options`);
+      if (!q.multi && picked.length > 1) throw new Error("choose one option per question");
+      if (!picked.length && !note) throw new Error(`answer question ${i + 1}`);
+      return `**${q.text}**\n${fmt(picked, note)}`;
+    }).join("\n\n");
+    if (comment) answer += `\n\n${comment}`;
+  } else {
+    const picked = input.choices === undefined ? [] : cleanOptions(input.choices);
+    if (old.options.length) for (const o of picked) if (!old.options.some((x) => optLabel(x) === o)) throw new Error(`"${o.slice(0, 40)}" is not one of the options`);
+    if (!old.multi && picked.length > 1) throw new Error("choose one option");
+    if (!picked.length && !comment) throw new Error("choose an option or write an answer");
+    answer = fmt(picked, comment);
+  }
   const changed = placeCard(cards, id, "done", null);
   const next = { ...(changed.find((c) => c.id === id) ?? old), answer, needsYou: false, agent: "", agentAt: "" };
   const out = stamp(old, next, ctx);
@@ -497,8 +540,9 @@ Work is tracked on a local kanban board (\`board\` command). Data lives in \`${r
 - Only the user moves cards to done.
 - If the \`board\` MCP server is configured, use its tools instead (\`next_card\`, \`claim_card\`, \`add_note\`, \`move_to_verify\` with \`howToVerify\`, \`set_how_to_verify\`, \`add_card\`, \`release_card\`); agents cannot move cards to todo, planned or done.
 - Add new items you find with \`board add "title"\` (or \`add_card\`); they land in inbox. Use \`--needs-you\` for unsure items.
+- Always set \`type\`, \`phase\`, \`lane\` and task id (\`--task\`, \`taskId\`) on every card you create, decisions and questions included. Reuse the phase and lane names already on the board (\`board list\`). Keep cards without a phase to a minimum; use none only for genuinely cross-cutting items.
 - Plan to cards: when a plan or phase is written or changed, every step that has no card gets one in inbox right away (\`board add "title" --task <plan id> --phase <phase> --type task\`, with the plan step in the description and a testable How to verify). Do not leave work only in plan files; the user approves by moving cards to todo. Before starting a phase, check \`board list\` for steps that are missing.
-- Questions go on the board, not in chat. When you need a choice from the user (design option, library, scope, an open \`D#\` decision), do not ask in prose and do not guess. Create a question card with the MCP \`add_card\`: \`type\` decision, \`options\` (2 to 12 short labels, each \`"Label :: one-line reason"\`), \`recommended\` (your pick), \`multi: true\` when several can apply, and enough context in \`description\`. Then continue with unblocked work. The user answers in the board and the card moves to done; read the answer with \`board_show\` (CLI: \`board show <id>\`, Answer section) before building on it, and record it in the project's decision log. Without MCP: \`board add "question" --type decision --needs-you\` with the options in the description.
+- Questions go on the board, not in chat. When you need a choice from the user (design option, library, scope, an open \`D#\` decision), do not ask in prose and do not guess. Create a question card with the MCP \`add_card\`: \`type\` decision, \`options\` (2 to 12 short labels, each \`"Label :: one-line reason"\`), \`recommended\` (your pick), \`multi: true\` when several can apply, and enough context in \`description\`. Never leave the choices only in the title or description: they must be \`options\`, so the user gets radio buttons or checkboxes. One card per topic, not per question: when a task or plan raises several decisions at once (for one feature: a protocol detail, a UI label, a timeout, a limit), create ONE decision card with \`questions\` (a list of \`{tab, text, options, multi, recommended}\`, one entry per decision) instead of \`options\`. The board shows each as a tab named by \`tab\` (1 to 3 words) and the user answers them together. Separate decision cards are only for decisions about unrelated work. Collect the questions first, then create the card once. Then continue with unblocked work. The user answers in the board and the card moves to done; read the answer with \`board_show\` (CLI: \`board show <id>\`, Answer section) before building on it, and record it in the project's decision log. Without MCP: \`board add "question" --type decision --option "A :: why" --option "B :: why" --recommended A\` (add \`--multi\` for pick-several). A decision without options or questions is refused.
 ${end}
 `;
 

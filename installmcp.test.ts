@@ -1,9 +1,10 @@
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { installMcp, claudeSettings, mcpJson } from "./installmcp";
 
-const scratch = "/tmp/claude-1000/-home-kuba-dev-esp-CAN-Sniffer/0b32f9e8-d0b6-45bf-89f0-a627f3af6ebb/scratchpad";
+const scratch = tmpdir();
 let root: string;
 beforeEach(() => { root = mkdtempSync(join(scratch, "inst-")); });
 afterEach(() => rmSync(root, { recursive: true, force: true }));

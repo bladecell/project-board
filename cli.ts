@@ -2,7 +2,7 @@
 import { parseArgs } from "node:util";
 import { basename, dirname, join, resolve } from "node:path";
 import {
-  boardDir, boardRel, columns, convertSubtasks, createCard, claimCard, hasBoard, initBoard, refreshWorkflow, isAgentLive, loadCards, moveCard, setSteps, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
+  boardDir, cleanOptions, optLabel, boardRel, columns, convertSubtasks, createCard, claimCard, hasBoard, initBoard, refreshWorkflow, isAgentLive, loadCards, moveCard, setSteps, serializeCard, sortCards, startAgent, stopAgent, touchAgents, types,
   type Card,
 } from "./lib";
 import { getCommits, linkCommits } from "./commits";
@@ -15,7 +15,8 @@ import { installMcp, onPath } from "./installmcp";
 
 const usage = `board                      start the web board in this project
 board init                 create the board dir, update .gitignore, add the workflow block to CLAUDE.md (created if missing)
-board add "title" [--type bug|feature|task|decision] [--column inbox] [--task P2.3] [--phase X] [--lane L] [--needs-you] [--blocked]
+board add "title" --type bug|feature|task|decision --task P2.3 --phase X --lane L [--column inbox] [--needs-you] [--blocked]
+                           decisions: --option "A :: why" --option "B :: why" [--recommended A] [--multi]
 board move <id> <column> [--notes "what ran + result"] [--steps "- [ ] check one\n- [ ] check two"]
 board steps <id> [--steps "..."]  append manual checks to How to verify (or pipe them on stdin)
 board list [column]        one line per card (done is hidden unless asked for)
@@ -41,6 +42,7 @@ const { values, positionals } = parseArgs({
     dir: { type: "string" }, port: { type: "string" }, open: { type: "boolean" },
     type: { type: "string" }, column: { type: "string" }, task: { type: "string" }, phase: { type: "string" },
     lane: { type: "string" }, "needs-you": { type: "boolean" }, blocked: { type: "boolean" }, notes: { type: "string" }, session: { type: "string" }, steps: { type: "string" }, hooks: { type: "boolean" }, shared: { type: "boolean" }, "dry-run": { type: "boolean" }, "opencode-v1": { type: "boolean" },
+    option: { type: "string", multiple: true }, recommended: { type: "string" }, multi: { type: "boolean" },
     help: { type: "boolean", short: "h" },
   },
 });
@@ -163,9 +165,15 @@ try {
   } else if (cmd === "add") {
     const title = args.join(" ").trim();
     if (!title) fail('usage: board add "title" [options]');
+    const missing = [["type", values.type], ["task", values.task], ["phase", values.phase], ["lane", values.lane]].filter(([, v]) => v === undefined).map(([k]) => `--${k}`);
+    if (missing.length) fail(`missing ${missing.join(", ")}: set type, task id, phase and lane on every card (pass "" to leave one empty, e.g. --phase "")`);
     if (values.type && !(types as readonly string[]).includes(values.type)) fail(`unknown type "${values.type}" (${types.join(", ")})`);
+    const options = values.option ? cleanOptions(values.option) : [];
+    if (values.type === "decision" && options.length < 2) fail('a decision needs at least 2 choices: --option "A :: why" --option "B :: why" [--recommended A] [--multi]');
+    if (options.length && values.type !== "decision") fail("--option is only for --type decision");
+    if (values.recommended && !options.some((o) => optLabel(o) === values.recommended)) fail("--recommended must match the label of one --option");
     const c = createCard(need(), {
-      title, ...(values.type && { type: values.type }), ...(values.column && { column: column(values.column) }),
+      title, ...(values.type && { type: values.type }), ...(options.length && { options, needsYou: true, recommended: values.recommended ?? "", multi: !!values.multi }), ...(values.column && { column: column(values.column) }),
       ...(values.task && { taskId: values.task }), ...(values.phase && { phase: values.phase }), ...(values.lane && { lane: values.lane }),
       ...(values["needs-you"] && { needsYou: true }), ...(values.blocked && { blocked: true }),
     }, { by: "cli" });

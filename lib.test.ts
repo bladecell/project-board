@@ -16,7 +16,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 const card = (o: Partial<Card>): Card => ({
   id: 1, file: "0001-a.md", column: "inbox", order: 1, type: "task", taskId: "", phase: "", lane: "",
   needsYou: false, blocked: false, title: "a", description: "", verifyNotes: "", howToVerify: "",
-  options: [], recommended: "", multi: false, answer: "", created: "", updated: "", history: [], agent: "", agentAt: "", ...o,
+  options: [], recommended: "", multi: false, questions: [], answer: "", created: "", updated: "", history: [], agent: "", agentAt: "", ...o,
 });
 
 describe("card parse/serialize", () => {
@@ -44,7 +44,7 @@ Some body
 - [x] two
 `;
     expect(parseCard("0012-fix.md", text)).toEqual({
-      options: [], recommended: "", multi: false, answer: "",
+      options: [], recommended: "", multi: false, questions: [], answer: "",
       id: 12, file: "0012-fix.md", column: "verify", order: 3, type: "bug", taskId: "P2.3", phase: "P2", lane: "fw",
       needsYou: true, blocked: false, title: "Fix: the thing",
       description: "Some body\n![](images/a.png)", verifyNotes: "- ran it", howToVerify: "- [ ] one\n- [x] two",
@@ -581,6 +581,17 @@ describe("question cards", () => {
     expect(() => cleanOptions([1])).toThrow();
     expect(() => cleanOptions(Array.from({ length: 13 }, (_, i) => `o${i}`))).toThrow();
     expect(() => cleanOptions(["x".repeat(301)])).toThrow();
+  });
+  test("sub-questions round trip and are answered one by one", () => {
+    initBoard(root); const d = boardDir(root);
+    const qs = [{ text: "Policy?", options: ["Three failures", "Time window"], multi: false, recommended: "Time window" }, { text: "Notes?", options: [], multi: false, recommended: "" }];
+    const c = createCard(d, { title: "RD1", type: "decision", needsYou: true, questions: qs }, cli);
+    expect(parseCard(c.file, serializeCard(c))!.questions).toEqual(qs);
+    expect(() => answerCard(d, c.id, { answers: [{ choices: ["Time window"] }] }, cli)).toThrow("answer every");
+    expect(() => answerCard(d, c.id, { answers: [{ choices: ["Time window"] }, {}] }, cli)).toThrow("question 2");
+    const out = answerCard(d, c.id, { answers: [{ choices: ["Time window"] }, { comment: "none" }] }, cli);
+    expect(out.answer).toBe("**Policy?**\n- Time window\n\n**Notes?**\nnone");
+    expect(out.column).toBe("done");
   });
   test("answering records the choice, clears needs-you and moves to done", () => {
     const { d, c } = ask();

@@ -1,10 +1,11 @@
+import { tmpdir } from "node:os";
 import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { splitInlineTasks, renderMarkdown, countTasks } from "./public/markdown.js";
 import { addSteps, appendNotes, boardDir, createCard, initBoard, loadCards, moveCard, parseCard, serializeCard, setSteps, normalizeSteps } from "./lib";
 
-const scratch = "/tmp/claude-1000/-home-kuba-dev-esp-CAN-Sniffer/0b32f9e8-d0b6-45bf-89f0-a627f3af6ebb/scratchpad";
+const scratch = tmpdir();
 const flat = "Not viewed in a browser. - [ ] Phone: layout fits - [ ] Desktop: columns align - [x] New dashboard loads";
 const cli = { by: "cli" as const };
 const mk = () => {

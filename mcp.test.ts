@@ -1,14 +1,17 @@
+import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { answerCard, boardDir, createCard, initBoard, loadCards, moveCard, startAgent } from "./lib";
 import { createMcp, latestVersion, supportedVersions } from "./mcp";
 
-const scratch = "/tmp/claude-1000/-home-kuba-dev-esp-CAN-Sniffer/0b32f9e8-d0b6-45bf-89f0-a627f3af6ebb/scratchpad";
+const scratch = tmpdir();
 let root: string, dir: string;
 const ui = { by: "ui" as const };
 const rpc = (m: ReturnType<typeof createMcp>, method: string, params?: unknown, id: number | string = 1) => m.handle({ jsonrpc: "2.0", id, method, params }) as any;
-const call = (m: ReturnType<typeof createMcp>, name: string, args?: unknown) => rpc(m, "tools/call", { name, arguments: args }).result;
+const rawCall = (m: ReturnType<typeof createMcp>, name: string, args?: unknown) => rpc(m, "tools/call", { name, arguments: args }).result;
+const meta = { type: "task", taskId: "", phase: "", lane: "" };
+const call = (m: ReturnType<typeof createMcp>, name: string, args?: any) => rawCall(m, name, name === "add_card" && args && typeof args === "object" ? { ...meta, ...(args.options ? { type: "decision" } : {}), ...args } : args);
 const card = (id: number) => loadCards(dir).find((c) => c.id === id)!;
 const mk = (title: string, column: string) => {
   const c = createCard(dir, { title }, ui);
@@ -153,13 +156,18 @@ describe("tools", () => {
     expect(call(hello(), "move_to_verify", { id: c.id, notes: "n" }).isError).toBe(true);
     expect(card(c.id).column).toBe("in-progress");
   });
+  test("add_card requires type, taskId, phase and lane (empty string allowed)", () => {
+    const m = hello();
+    expect(rawCall(m, "add_card", { title: "x", type: "task", taskId: "P1", lane: "l" }).isError).toBe(true);
+    expect(rawCall(m, "add_card", { title: "x", type: "task", taskId: "P1", phase: "", lane: "l" }).isError).toBeFalsy();
+  });
   test("add_card creates in inbox only and validates input", () => {
     const m = hello();
     const r = call(m, "add_card", { title: "found a bug", description: "details", type: "bug", needsYou: true });
     expect(card(r.structuredContent.id)).toMatchObject({ column: "inbox", type: "bug", needsYou: true, description: "details" });
     expect(card(r.structuredContent.id).history[0].by).toBe("mcp:claude-code");
-    const sneaky = call(m, "add_card", { title: "x", column: "todo", phase: "p", lane: "l", blocked: true });
-    expect(card(sneaky.structuredContent.id)).toMatchObject({ column: "inbox", phase: "", lane: "", blocked: false });
+    const sneaky = call(m, "add_card", { title: "x", column: "todo", phase: "p", lane: "l", taskId: "P1.2", blocked: true });
+    expect(card(sneaky.structuredContent.id)).toMatchObject({ column: "inbox", phase: "p", lane: "l", taskId: "P1.2", blocked: false });
     for (const a of [{}, { title: "" }, { title: "  " }, { title: 5 }, { title: "x".repeat(201) }, { title: "x", type: "nope" }, { title: "x", description: "d".repeat(10001) }, { title: "x", needsYou: "yes" }]) {
       expect(call(m, "add_card", a).isError).toBe(true);
     }
@@ -296,6 +304,21 @@ describe("asking questions", () => {
       expect(r.isError).toBe(true);
       expect(r.content[0].text).not.toContain("internal error");
     }
+  });
+  test("questions keep a short tab name, survive a reload, and show in board_show", () => {
+    const m = hello();
+    const r = call(m, "add_card", { title: "Setup", type: "decision", questions: [{ tab: "  Data\nbase ", text: "Which db?", options: ["A", "B"] }, { text: "Notes?" }] });
+    const c = card(r.structuredContent.id);
+    expect(c.questions[0].tab).toBe("Data base");
+    expect("tab" in c.questions[1]).toBe(false);
+    expect(call(m, "board_show", { id: c.id }).content[0].text).toContain("1. [Data base] Which db?");
+  });
+  test("a decision without options or questions is refused", () => {
+    const m = hello();
+    const r = call(m, "add_card", { title: "Which?", type: "decision", description: "A or B?" });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain("a decision needs options");
+    expect(call(m, "add_card", { title: "Which?", type: "decision", questions: [{ text: "Why?" }] }).isError).toBeUndefined();
   });
   test("board_show returns the answer", () => {
     const m = hello();
